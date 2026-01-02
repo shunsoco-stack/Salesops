@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block content %}
+  <section class="card">
+    <h2>入力</h2>
+    <form action="/entries" method="post" class="form">
+      <input type="hidden" name="month" value="{{ month }}" />
+
+      <div class="grid">
+        <label>
+          発生日
+          <input type="date" name="happened_on" value="{{ today }}" required />
+        </label>
+
+        <label>
+          売上
+          <input type="number" inputmode="decimal" step="0.01" name="sales" id="sales" value="0" required />
+        </label>
+
+        <label>
+          客数
+          <input type="number" inputmode="numeric" step="1" min="0" name="customers" id="customers" value="0" required />
+        </label>
+
+        <label>
+          客単価（自動）
+          <input type="text" id="unit_price" value="" readonly />
+        </label>
+
+        <label>
+          外注費
+          <input type="number" inputmode="decimal" step="0.01" name="outsourcing_cost" value="0" />
+        </label>
+
+        <label>
+          利用ポイント
+          <input type="number" inputmode="decimal" step="0.01" name="used_points" value="0" />
+        </label>
+
+        <label>
+          店舗売上（任意）
+          <input type="number" inputmode="decimal" step="0.01" name="store_sales" id="store_sales" value="" />
+        </label>
+
+        <label>
+          現金決済
+          <input type="number" inputmode="decimal" step="0.01" name="cash_payment" id="cash_payment" value="0" />
+        </label>
+
+        <label>
+          カード決済
+          <input type="number" inputmode="decimal" step="0.01" name="card_payment" id="card_payment" value="0" />
+        </label>
+
+        <label>
+          QR決済
+          <input type="number" inputmode="decimal" step="0.01" name="qr_payment" id="qr_payment" value="0" />
+        </label>
+
+        <label class="grid__full">
+          備考
+          <textarea name="note" rows="2"></textarea>
+        </label>
+      </div>
+
+      <div class="form__actions">
+        <button type="submit">保存</button>
+        <a class="btn btn--secondary" href="/export.csv?month={{ month }}">CSV出力</a>
+      </div>
+      <p class="hint">
+        同じ発生日がある場合は上書き更新します。店舗売上を入力した場合、現金+カード+QRと一致しないと保存できません。
+      </p>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>月次集計（{{ month }}）</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi__label">売上合計</div><div class="kpi__value">{{ summary.total_sales }}</div></div>
+      <div class="kpi"><div class="kpi__label">客数合計</div><div class="kpi__value">{{ summary.total_customers }}</div></div>
+      <div class="kpi"><div class="kpi__label">客単価（売上/客数）</div><div class="kpi__value">{{ summary.avg_unit_price or "" }}</div></div>
+      <div class="kpi"><div class="kpi__label">外注費合計</div><div class="kpi__value">{{ summary.total_outsourcing }}</div></div>
+      <div class="kpi"><div class="kpi__label">利用ポイント合計</div><div class="kpi__value">{{ summary.total_points }}</div></div>
+      <div class="kpi"><div class="kpi__label">店舗売上合計</div><div class="kpi__value">{{ summary.total_store_sales }}</div></div>
+      <div class="kpi"><div class="kpi__label">現金</div><div class="kpi__value">{{ summary.total_cash }}</div></div>
+      <div class="kpi"><div class="kpi__label">カード</div><div class="kpi__value">{{ summary.total_card }}</div></div>
+      <div class="kpi"><div class="kpi__label">QR</div><div class="kpi__value">{{ summary.total_qr }}</div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>一覧（{{ month }}）</h2>
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>発生日</th>
+            <th class="num">売上</th>
+            <th class="num">客数</th>
+            <th class="num">客単価</th>
+            <th class="num">外注費</th>
+            <th class="num">利用PT</th>
+            <th class="num">店舗売上</th>
+            <th class="num">現金</th>
+            <th class="num">カード</th>
+            <th class="num">QR</th>
+            <th>備考</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td>{{ r.happened_on }}</td>
+            <td class="num">{{ r.sales }}</td>
+            <td class="num">{{ r.customers }}</td>
+            <td class="num">{{ r.unit_price or "" }}</td>
+            <td class="num">{{ r.outsourcing_cost }}</td>
+            <td class="num">{{ r.used_points }}</td>
+            <td class="num">{{ r.store_sales or "" }}</td>
+            <td class="num">{{ r.cash_payment }}</td>
+            <td class="num">{{ r.card_payment }}</td>
+            <td class="num">{{ r.qr_payment }}</td>
+            <td class="note">{{ r.note or "" }}</td>
+            <td class="actions">
+              <a class="btn btn--tiny" href="/entries/{{ r.id }}/edit?month={{ month }}">編集</a>
+              <form action="/entries/{{ r.id }}/delete" method="post" class="inline" onsubmit="return confirm('削除しますか？');">
+                <input type="hidden" name="month" value="{{ month }}" />
+                <button class="btn btn--tiny btn--danger" type="submit">削除</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+          {% if rows|length == 0 %}
+          <tr><td colspan="12" class="muted">データがありません。</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
+

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+  <section class="card">
+    <h2>編集</h2>
+    <form action="/entries/{{ row.id }}/edit" method="post" class="form">
+      <input type="hidden" name="month" value="{{ month }}" />
+
+      <div class="grid">
+        <label>
+          発生日
+          <input type="date" name="happened_on" value="{{ row.happened_on }}" required />
+        </label>
+
+        <label>
+          売上
+          <input type="number" inputmode="decimal" step="0.01" name="sales" id="sales" value="{{ row.sales }}" required />
+        </label>
+
+        <label>
+          客数
+          <input type="number" inputmode="numeric" step="1" min="0" name="customers" id="customers" value="{{ row.customers }}" required />
+        </label>
+
+        <label>
+          客単価（自動）
+          <input type="text" id="unit_price" value="{{ row.unit_price or '' }}" readonly />
+        </label>
+
+        <label>
+          外注費
+          <input type="number" inputmode="decimal" step="0.01" name="outsourcing_cost" value="{{ row.outsourcing_cost }}" />
+        </label>
+
+        <label>
+          利用ポイント
+          <input type="number" inputmode="decimal" step="0.01" name="used_points" value="{{ row.used_points }}" />
+        </label>
+
+        <label>
+          店舗売上（任意）
+          <input type="number" inputmode="decimal" step="0.01" name="store_sales" id="store_sales" value="{{ row.store_sales or '' }}" />
+        </label>
+
+        <label>
+          現金決済
+          <input type="number" inputmode="decimal" step="0.01" name="cash_payment" id="cash_payment" value="{{ row.cash_payment }}" />
+        </label>
+
+        <label>
+          カード決済
+          <input type="number" inputmode="decimal" step="0.01" name="card_payment" id="card_payment" value="{{ row.card_payment }}" />
+        </label>
+
+        <label>
+          QR決済
+          <input type="number" inputmode="decimal" step="0.01" name="qr_payment" id="qr_payment" value="{{ row.qr_payment }}" />
+        </label>
+
+        <label class="grid__full">
+          備考
+          <textarea name="note" rows="2">{{ row.note or "" }}</textarea>
+        </label>
+      </div>
+
+      <div class="form__actions">
+        <button type="submit">更新</button>
+        <a class="btn btn--secondary" href="/entries?month={{ month }}">戻る</a>
+      </div>
+    </form>
+  </section>
+{% endblock %}
+
