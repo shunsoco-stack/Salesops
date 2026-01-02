@@ -25,16 +25,13 @@ function updateUnitPrice() {
 }
 
 function parseBreakdownSum(text) {
-  const lines = String(text || "").split(/\r?\n/);
+  const src = String(text || "");
   let sum = 0;
   let hasAny = false;
-  for (const raw of lines) {
-    const ln = raw.trim();
-    if (!ln) continue;
-    // take last number-like chunk (supports commas)
-    const matches = ln.match(/-?\d[\d,]*(?:\.\d+)?/g);
-    if (!matches || matches.length === 0) continue;
-    const num = matches[matches.length - 1].replace(/,/g, "");
+  // find all numbers (supports commas) anywhere, including "10000+5000"
+  const matches = src.match(/-?\d[\d,]*(?:\.\d+)?/g) || [];
+  for (const m of matches) {
+    const num = String(m).replace(/,/g, "");
     const v = Number(num);
     if (!Number.isFinite(v)) continue;
     hasAny = true;

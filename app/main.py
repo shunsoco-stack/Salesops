@@ -93,42 +93,35 @@ def _as_money(v: Any) -> Decimal:
 _NUM_RE = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
 
 
-def _parse_outsourcing_breakdown(text: str | None) -> list[tuple[str, Decimal]]:
+def _parse_outsourcing_amounts(text: str | None) -> list[Decimal]:
     """
-    Parses multi-line breakdown text into [(name, amount), ...].
-    Supported examples per line:
-      - A 10000
-      - A: 10,000
-      - Aさんは10,000円
+    Parses outsourcing breakdown text into [amount, ...].
+
+    Examples:
+      - 10000+5000+5000
+      - 10000
+        5000
+        5000
     """
     if text is None:
         return []
-    lines = [ln.strip() for ln in text.splitlines()]
-    items: list[tuple[str, Decimal]] = []
-    for ln in lines:
-        if ln == "":
-            continue
-        matches = list(_NUM_RE.finditer(ln))
-        if not matches:
-            raise ValueError("外注費内訳の形式が不正です。例: A 10000")
-        num = matches[-1].group(0).replace(",", "")
+    matches = _NUM_RE.findall(text)
+    if not matches:
+        raise ValueError("外注費内訳の形式が不正です。例: 10000+5000+5000")
+    amounts: list[Decimal] = []
+    for m in matches:
+        num = m.replace(",", "")
         try:
-            amount = Decimal(num).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            amt = Decimal(num).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         except InvalidOperation:
-            raise ValueError("外注費内訳の金額が不正です。例: A 10000")
-
-        name = (ln[: matches[-1].start()] + ln[matches[-1].end() :]).strip()
-        name = name.replace(":", " ").replace("：", " ").replace(",", " ").replace("円", " ").strip()
-        name = re.sub(r"\s+", " ", name).strip()
-        if name == "":
-            name = "（名前なし）"
-
-        items.append((name, amount))
-    return items
+            raise ValueError("外注費内訳の金額が不正です。例: 10000+5000+5000")
+        amounts.append(amt)
+    return amounts
 
 
-def _format_outsourcing_breakdown(payments: list[OutsourcingPayment]) -> str:
-    return "\n".join([f"{p.staff_name} {p.amount}" for p in payments])
+def _format_outsourcing_amounts(payments: list[OutsourcingPayment]) -> str:
+    # textarea shows one amount per line
+    return "\n".join([str(p.amount) for p in payments])
 
 
 def _validate_payments(store_sales_raw: str | None, cash: Decimal, card: Decimal, qr: Decimal) -> str | None:
@@ -230,12 +223,12 @@ def create_or_update_entry(
     except (ValueError, InvalidOperation):
         return RedirectResponse(url=f"/entries?month={month}&err=入力値が不正です。", status_code=303)
 
-    breakdown_items: list[tuple[str, Decimal]] | None
+    breakdown_items: list[Decimal] | None
     if outsourcing_breakdown.strip() == "":
         breakdown_items = None  # treat as "no change" when overwriting an existing date
     else:
         try:
-            breakdown_items = _parse_outsourcing_breakdown(outsourcing_breakdown)
+            breakdown_items = _parse_outsourcing_amounts(outsourcing_breakdown)
         except ValueError as e:
             return RedirectResponse(url=f"/entries?month={month}&err={str(e)}", status_code=303)
 
@@ -263,9 +256,9 @@ def create_or_update_entry(
         existing.note = note_v
         if breakdown_items is not None:
             db.execute(delete(OutsourcingPayment).where(OutsourcingPayment.sales_daily_id == existing.id))
-            for name, amount in breakdown_items:
-                db.add(OutsourcingPayment(sales_daily_id=existing.id, staff_name=name, amount=amount))
-            existing.outsourcing_cost = sum((amt for _, amt in breakdown_items), Decimal("0"))
+            for amount in breakdown_items:
+                db.add(OutsourcingPayment(sales_daily_id=existing.id, staff_name="", amount=amount))
+            existing.outsourcing_cost = sum((amt for amt in breakdown_items), Decimal("0"))
         else:
             has_existing_breakdown = (
                 db.execute(select(OutsourcingPayment.id).where(OutsourcingPayment.sales_daily_id == existing.id).limit(1)).first()
@@ -291,9 +284,9 @@ def create_or_update_entry(
         db.add(new_row)
         db.flush()  # get new_row.id
         if breakdown_items:
-            for name, amount in breakdown_items:
-                db.add(OutsourcingPayment(sales_daily_id=new_row.id, staff_name=name, amount=amount))
-            new_row.outsourcing_cost = sum((amt for _, amt in breakdown_items), Decimal("0"))
+            for amount in breakdown_items:
+                db.add(OutsourcingPayment(sales_daily_id=new_row.id, staff_name="", amount=amount))
+            new_row.outsourcing_cost = sum((amt for amt in breakdown_items), Decimal("0"))
         msg = "保存しました。"
 
     db.commit()
@@ -316,7 +309,7 @@ def edit_entry(entry_id: int, request: Request, month: str | None = None, err: s
         "request": request,
         "month": month_start.strftime("%Y-%m"),
         "row": row,
-        "outsourcing_breakdown": _format_outsourcing_breakdown(row.outsourcing_payments or []),
+        "outsourcing_breakdown": _format_outsourcing_amounts(row.outsourcing_payments or []),
         "err": err,
     }
     return templates.TemplateResponse("edit.html", ctx)
@@ -356,7 +349,7 @@ def update_entry(
         return RedirectResponse(url=f"/entries/{entry_id}/edit?month={month}&err=入力値が不正です。", status_code=303)
 
     try:
-        breakdown_items = _parse_outsourcing_breakdown(outsourcing_breakdown)
+        breakdown_items = _parse_outsourcing_amounts(outsourcing_breakdown)
     except ValueError as e:
         return RedirectResponse(url=f"/entries/{entry_id}/edit?month={month}&err={str(e)}", status_code=303)
 
@@ -389,9 +382,9 @@ def update_entry(
     row.note = note_v
     db.execute(delete(OutsourcingPayment).where(OutsourcingPayment.sales_daily_id == row.id))
     if breakdown_items:
-        for name, amount in breakdown_items:
-            db.add(OutsourcingPayment(sales_daily_id=row.id, staff_name=name, amount=amount))
-        row.outsourcing_cost = sum((amt for _, amt in breakdown_items), Decimal("0"))
+        for amount in breakdown_items:
+            db.add(OutsourcingPayment(sales_daily_id=row.id, staff_name="", amount=amount))
+        row.outsourcing_cost = sum((amt for amt in breakdown_items), Decimal("0"))
     db.commit()
 
     return RedirectResponse(url=f"/entries?month={month}&msg=更新しました。", status_code=303)
@@ -448,7 +441,7 @@ def export_csv(month: str | None = None, db: Session = Depends(get_db)):
                 r.customers,
                 "" if r.unit_price is None else str(_as_money(r.unit_price)),
                 str(_as_money(r.outsourcing_cost)),
-                "; ".join([f"{p.staff_name}:{p.amount}" for p in (r.outsourcing_payments or [])]),
+                "+".join([str(p.amount) for p in (r.outsourcing_payments or [])]),
                 str(_as_money(r.used_points)),
                 "" if r.store_sales is None else str(_as_money(r.store_sales)),
                 str(_as_money(r.cash_payment)),

@@ -32,8 +32,8 @@
         </label>
 
         <label class="grid__full">
-          外注費内訳（1行ずつ）
-          <textarea name="outsourcing_breakdown" id="outsourcing_breakdown" rows="2" placeholder="例: A 10000&#10;例: B 5000"></textarea>
+          外注費内訳（金額だけ / + や改行で複数OK）
+          <textarea name="outsourcing_breakdown" id="outsourcing_breakdown" rows="2" placeholder="例: 10000+5000+5000&#10;例: 10000&#10;5000&#10;5000"></textarea>
         </label>
 
         <label>
@@ -124,7 +124,7 @@
             <td class="note">
               {% if r.outsourcing_payments and (r.outsourcing_payments|length) > 0 %}
                 {% for p in r.outsourcing_payments %}
-                  {{ p.staff_name }}:{{ p.amount }}{% if not loop.last %}<br />{% endif %}
+                  {{ p.amount }}{% if not loop.last %}+{% endif %}
                 {% endfor %}
               {% endif %}
             </td>
