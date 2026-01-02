@@ -76,6 +76,13 @@ input, textarea {
 input[readonly] { opacity: 0.8; }
 textarea { resize: vertical; min-height: 42px; }
 
+/* Make date/month picker icons visible on dark bg (Chrome/Edge) */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.85;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

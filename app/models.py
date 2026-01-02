@@ -46,6 +46,16 @@ class SalesDaily(Base):
         onupdate=datetime.utcnow,
     )
 
+    @property
+    def computed_store_sales(self) -> Decimal:
+        # 店舗売上 = 売上 - 外注費
+        return (self.sales or Decimal("0")) - (self.outsourcing_cost or Decimal("0"))
+
+    @property
+    def computed_cash_payment(self) -> Decimal:
+        # 現金決済 = 売上 - 利用ポイント - カード決済 - QR決済
+        return (self.sales or Decimal("0")) - (self.used_points or Decimal("0")) - (self.card_payment or Decimal("0")) - (self.qr_payment or Decimal("0"))
+
 
 class OutsourcingPayment(Base):
     __tablename__ = "outsourcing_payments"

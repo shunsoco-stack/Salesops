@@ -49,6 +49,26 @@ function updateOutsourcingCostFromBreakdown() {
   costEl.value = formatMoney(sum);
 }
 
+function updateDerivedFields() {
+  const salesEl = document.getElementById("sales");
+  const pointsEl = document.getElementById("used_points");
+  const outsourcingEl = document.getElementById("outsourcing_cost");
+  const cardEl = document.getElementById("card_payment");
+  const qrEl = document.getElementById("qr_payment");
+  const storeSalesEl = document.getElementById("store_sales");
+  const cashEl = document.getElementById("cash_payment");
+  if (!salesEl || !pointsEl || !outsourcingEl || !cardEl || !qrEl || !storeSalesEl || !cashEl) return;
+
+  const sales = toNumber(salesEl.value);
+  const points = toNumber(pointsEl.value);
+  const outsourcing = toNumber(outsourcingEl.value);
+  const card = toNumber(cardEl.value);
+  const qr = toNumber(qrEl.value);
+
+  storeSalesEl.value = formatMoney(sales - outsourcing);
+  cashEl.value = formatMoney(sales - points - card - qr);
+}
+
 document.addEventListener("input", (e) => {
   const id = e.target && e.target.id;
   if (id === "sales" || id === "customers") {
@@ -57,10 +77,14 @@ document.addEventListener("input", (e) => {
   if (id === "outsourcing_breakdown") {
     updateOutsourcingCostFromBreakdown();
   }
+  if (id === "sales" || id === "used_points" || id === "outsourcing_cost" || id === "card_payment" || id === "qr_payment") {
+    updateDerivedFields();
+  }
 });
 
 document.addEventListener("DOMContentLoaded", () => {
   updateUnitPrice();
   updateOutsourcingCostFromBreakdown();
+  updateDerivedFields();
 });
 

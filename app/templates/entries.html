@@ -38,17 +38,12 @@
 
         <label>
           利用ポイント
-          <input type="number" inputmode="decimal" step="0.01" name="used_points" value="0" />
+          <input type="number" inputmode="decimal" step="0.01" name="used_points" id="used_points" value="0" />
         </label>
 
         <label>
-          店舗売上（任意）
-          <input type="number" inputmode="decimal" step="0.01" name="store_sales" id="store_sales" value="" />
-        </label>
-
-        <label>
-          現金決済
-          <input type="number" inputmode="decimal" step="0.01" name="cash_payment" id="cash_payment" value="0" />
+          店舗売上（自動：売上-外注費）
+          <input type="text" id="store_sales" value="" readonly />
         </label>
 
         <label>
@@ -59,6 +54,11 @@
         <label>
           QR決済
           <input type="number" inputmode="decimal" step="0.01" name="qr_payment" id="qr_payment" value="0" />
+        </label>
+
+        <label>
+          現金決済（自動）
+          <input type="text" id="cash_payment" value="" readonly />
         </label>
 
         <label class="grid__full">
@@ -72,8 +72,25 @@
         <a class="btn btn--secondary" href="/export.csv?month={{ month }}">CSV出力</a>
       </div>
       <p class="hint">
-        同じ発生日がある場合は上書き更新します。店舗売上を入力した場合、現金+カード+QRと一致しないと保存できません。
+        同じ発生日がある場合は上書き更新します。外注費内訳を入れると合計が自動計算されます。
       </p>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>カード/QR決済をCSVから取り込み</h2>
+    <form action="/import-payments" method="post" enctype="multipart/form-data" class="form">
+      <input type="hidden" name="month" value="{{ month }}" />
+      <div class="grid">
+        <label class="grid__full">
+          CSVファイル（列に「発生日」「カード決済」「QR決済」）
+          <input type="file" name="file" accept=".csv,text/csv" required />
+        </label>
+      </div>
+      <div class="form__actions">
+        <button type="submit">取り込み</button>
+      </div>
+      <p class="hint">既に存在する日付のデータに対して、カード決済/QR決済を上書きします（存在しない日付はスキップ）。</p>
     </form>
   </section>
 
@@ -129,8 +146,8 @@
               {% endif %}
             </td>
             <td class="num">{{ r.used_points }}</td>
-            <td class="num">{{ r.store_sales or "" }}</td>
-            <td class="num">{{ r.cash_payment }}</td>
+            <td class="num">{{ r.computed_store_sales }}</td>
+            <td class="num">{{ r.computed_cash_payment }}</td>
             <td class="num">{{ r.card_payment }}</td>
             <td class="num">{{ r.qr_payment }}</td>
             <td class="note">{{ r.note or "" }}</td>

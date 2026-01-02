@@ -7,7 +7,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
-from fastapi import Depends, FastAPI, Form, Request
+from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -124,19 +124,39 @@ def _format_outsourcing_amounts(payments: list[OutsourcingPayment]) -> str:
     return "\n".join([str(p.amount) for p in payments])
 
 
-def _validate_payments(store_sales_raw: str | None, cash: Decimal, card: Decimal, qr: Decimal) -> str | None:
-    # If store_sales was provided (non-empty), ensure payments sum matches.
-    if store_sales_raw is None or store_sales_raw.strip() == "":
-        return None
+def _parse_money_like(value: str | None) -> Decimal:
+    if value is None:
+        return Decimal("0")
+    s = value.strip()
+    if s == "":
+        return Decimal("0")
+    s = s.replace(",", "")
     try:
-        store_sales = _d(store_sales_raw, default=None)
-    except ValueError:
-        return "店舗売上が不正な値です。"
-    if store_sales is None:
-        return "店舗売上が不正な値です。"
-    if (cash + card + qr) != store_sales:
-        return "店舗売上と、現金+カード+QRの合計が一致しません。"
-    return None
+        return Decimal(s)
+    except InvalidOperation:
+        raise ValueError("金額が不正です。")
+
+
+def _parse_date_like(value: str) -> date:
+    v = value.strip()
+    if v == "":
+        raise ValueError("日付が空です。")
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d"):
+        try:
+            return datetime.strptime(v, fmt).date()
+        except ValueError:
+            continue
+    raise ValueError("日付形式が不正です（例: 2026-01-02）。")
+
+
+def _decode_csv_bytes(data: bytes) -> str:
+    for enc in ("utf-8-sig", "cp932", "utf-8"):
+        try:
+            return data.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    # last resort
+    return data.decode("utf-8", errors="replace")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -165,8 +185,8 @@ def entries(request: Request, month: str | None = None, msg: str | None = None, 
     total_customers = sum((r.customers for r in rows), 0)
     total_outsourcing = sum((_as_money(r.outsourcing_cost) for r in rows), Decimal("0"))
     total_points = sum((_as_money(r.used_points) for r in rows), Decimal("0"))
-    total_store_sales = sum((_as_money(r.store_sales) for r in rows), Decimal("0"))
-    total_cash = sum((_as_money(r.cash_payment) for r in rows), Decimal("0"))
+    total_store_sales = sum((_as_money(r.computed_store_sales) for r in rows), Decimal("0"))
+    total_cash = sum((_as_money(r.computed_cash_payment) for r in rows), Decimal("0"))
     total_card = sum((_as_money(r.card_payment) for r in rows), Decimal("0"))
     total_qr = sum((_as_money(r.qr_payment) for r in rows), Decimal("0"))
 
@@ -204,8 +224,6 @@ def create_or_update_entry(
     outsourcing_cost: str = Form("0"),
     outsourcing_breakdown: str = Form(""),
     used_points: str = Form("0"),
-    store_sales: str = Form(""),
-    cash_payment: str = Form("0"),
     card_payment: str = Form("0"),
     qr_payment: str = Form("0"),
     note: str = Form(""),
@@ -217,7 +235,6 @@ def create_or_update_entry(
         customers_i = _i(customers)
         outsourcing_d = _d(outsourcing_cost) or Decimal("0")
         points_d = _d(used_points) or Decimal("0")
-        cash_d = _d(cash_payment) or Decimal("0")
         card_d = _d(card_payment) or Decimal("0")
         qr_d = _d(qr_payment) or Decimal("0")
     except (ValueError, InvalidOperation):
@@ -232,16 +249,11 @@ def create_or_update_entry(
         except ValueError as e:
             return RedirectResponse(url=f"/entries?month={month}&err={str(e)}", status_code=303)
 
-    pay_err = _validate_payments(store_sales, cash_d, card_d, qr_d)
-    if pay_err:
-        return RedirectResponse(url=f"/entries?month={month}&err={pay_err}", status_code=303)
-
-    try:
-        store_sales_d = _d(store_sales, default=None)
-    except ValueError:
-        return RedirectResponse(url=f"/entries?month={month}&err=店舗売上が不正な値です。", status_code=303)
     unit_price_d = _calc_unit_price(sales_d, customers_i)
     note_v = note.strip() or None
+    computed_cash = sales_d - points_d - card_d - qr_d
+    if computed_cash < 0:
+        return RedirectResponse(url=f"/entries?month={month}&err=カード+QR+ポイントが売上を超えています。", status_code=303)
 
     existing = db.execute(select(SalesDaily).where(SalesDaily.happened_on == dt)).scalar_one_or_none()
     if existing:
@@ -249,8 +261,6 @@ def create_or_update_entry(
         existing.customers = customers_i
         existing.unit_price = unit_price_d
         existing.used_points = points_d
-        existing.store_sales = store_sales_d
-        existing.cash_payment = cash_d
         existing.card_payment = card_d
         existing.qr_payment = qr_d
         existing.note = note_v
@@ -266,6 +276,9 @@ def create_or_update_entry(
             )
             if not has_existing_breakdown:
                 existing.outsourcing_cost = outsourcing_d
+        # computed fields
+        existing.store_sales = existing.computed_store_sales
+        existing.cash_payment = existing.computed_cash_payment
         msg = "同日のデータを更新しました。"
     else:
         new_row = SalesDaily(
@@ -275,8 +288,6 @@ def create_or_update_entry(
             unit_price=unit_price_d,
             outsourcing_cost=outsourcing_d,
             used_points=points_d,
-            store_sales=store_sales_d,
-            cash_payment=cash_d,
             card_payment=card_d,
             qr_payment=qr_d,
             note=note_v,
@@ -287,6 +298,8 @@ def create_or_update_entry(
             for amount in breakdown_items:
                 db.add(OutsourcingPayment(sales_daily_id=new_row.id, staff_name="", amount=amount))
             new_row.outsourcing_cost = sum((amt for amt in breakdown_items), Decimal("0"))
+        new_row.store_sales = new_row.computed_store_sales
+        new_row.cash_payment = new_row.computed_cash_payment
         msg = "保存しました。"
 
     db.commit()
@@ -325,8 +338,6 @@ def update_entry(
     outsourcing_cost: str = Form("0"),
     outsourcing_breakdown: str = Form(""),
     used_points: str = Form("0"),
-    store_sales: str = Form(""),
-    cash_payment: str = Form("0"),
     card_payment: str = Form("0"),
     qr_payment: str = Form("0"),
     note: str = Form(""),
@@ -342,25 +353,22 @@ def update_entry(
         customers_i = _i(customers)
         outsourcing_d = _d(outsourcing_cost) or Decimal("0")
         points_d = _d(used_points) or Decimal("0")
-        cash_d = _d(cash_payment) or Decimal("0")
         card_d = _d(card_payment) or Decimal("0")
         qr_d = _d(qr_payment) or Decimal("0")
     except (ValueError, InvalidOperation):
         return RedirectResponse(url=f"/entries/{entry_id}/edit?month={month}&err=入力値が不正です。", status_code=303)
 
-    try:
-        breakdown_items = _parse_outsourcing_amounts(outsourcing_breakdown)
-    except ValueError as e:
-        return RedirectResponse(url=f"/entries/{entry_id}/edit?month={month}&err={str(e)}", status_code=303)
+    if outsourcing_breakdown.strip() == "":
+        breakdown_items = []  # allow clearing breakdown
+    else:
+        try:
+            breakdown_items = _parse_outsourcing_amounts(outsourcing_breakdown)
+        except ValueError as e:
+            return RedirectResponse(url=f"/entries/{entry_id}/edit?month={month}&err={str(e)}", status_code=303)
 
-    pay_err = _validate_payments(store_sales, cash_d, card_d, qr_d)
-    if pay_err:
-        return RedirectResponse(url=f"/entries/{entry_id}/edit?month={month}&err={pay_err}", status_code=303)
-
-    try:
-        store_sales_d = _d(store_sales, default=None)
-    except ValueError:
-        return RedirectResponse(url=f"/entries/{entry_id}/edit?month={month}&err=店舗売上が不正な値です。", status_code=303)
+    computed_cash = sales_d - points_d - card_d - qr_d
+    if computed_cash < 0:
+        return RedirectResponse(url=f"/entries/{entry_id}/edit?month={month}&err=カード+QR+ポイントが売上を超えています。", status_code=303)
     unit_price_d = _calc_unit_price(sales_d, customers_i)
     note_v = note.strip() or None
 
@@ -375,8 +383,6 @@ def update_entry(
     row.unit_price = unit_price_d
     row.outsourcing_cost = outsourcing_d
     row.used_points = points_d
-    row.store_sales = store_sales_d
-    row.cash_payment = cash_d
     row.card_payment = card_d
     row.qr_payment = qr_d
     row.note = note_v
@@ -385,6 +391,8 @@ def update_entry(
         for amount in breakdown_items:
             db.add(OutsourcingPayment(sales_daily_id=row.id, staff_name="", amount=amount))
         row.outsourcing_cost = sum((amt for amt in breakdown_items), Decimal("0"))
+    row.store_sales = row.computed_store_sales
+    row.cash_payment = row.computed_cash_payment
     db.commit()
 
     return RedirectResponse(url=f"/entries?month={month}&msg=更新しました。", status_code=303)
@@ -443,8 +451,8 @@ def export_csv(month: str | None = None, db: Session = Depends(get_db)):
                 str(_as_money(r.outsourcing_cost)),
                 "+".join([str(p.amount) for p in (r.outsourcing_payments or [])]),
                 str(_as_money(r.used_points)),
-                "" if r.store_sales is None else str(_as_money(r.store_sales)),
-                str(_as_money(r.cash_payment)),
+                str(_as_money(r.computed_store_sales)),
+                str(_as_money(r.computed_cash_payment)),
                 str(_as_money(r.card_payment)),
                 str(_as_money(r.qr_payment)),
                 r.note or "",
@@ -455,4 +463,58 @@ def export_csv(month: str | None = None, db: Session = Depends(get_db)):
     filename = f"sales_{month_start.strftime('%Y_%m')}.csv"
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return StreamingResponse(iter([output.getvalue()]), media_type="text/csv; charset=utf-8", headers=headers)
+
+
+@app.post("/import-payments")
+async def import_payments(month: str = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db)):
+    if not file.filename.lower().endswith(".csv"):
+        return RedirectResponse(url=f"/entries?month={month}&err=CSVファイルを選んでください。", status_code=303)
+
+    raw = await file.read()
+    text = _decode_csv_bytes(raw)
+    reader = csv.DictReader(io.StringIO(text))
+    if reader.fieldnames is None:
+        return RedirectResponse(url=f"/entries?month={month}&err=CSVのヘッダーが読み取れません。", status_code=303)
+
+    # header variants
+    def pick(row: dict[str, str], *keys: str) -> str | None:
+        for k in keys:
+            if k in row and row[k] is not None and str(row[k]).strip() != "":
+                return str(row[k])
+        return None
+
+    updated = 0
+    skipped = 0
+    errors = 0
+    for r in reader:
+        try:
+            d_raw = pick(r, "発生日", "日付", "date", "Date")
+            if not d_raw:
+                errors += 1
+                continue
+            dt = _parse_date_like(d_raw)
+            card_raw = pick(r, "カード決済", "card_payment", "カード", "Card")
+            qr_raw = pick(r, "QR決済", "qr_payment", "QR", "Qr")
+            card = _parse_money_like(card_raw)
+            qr = _parse_money_like(qr_raw)
+        except ValueError:
+            errors += 1
+            continue
+
+        row = db.execute(select(SalesDaily).where(SalesDaily.happened_on == dt)).scalar_one_or_none()
+        if not row:
+            skipped += 1
+            continue
+
+        row.card_payment = card
+        row.qr_payment = qr
+        # recompute derived fields
+        row.cash_payment = row.computed_cash_payment
+        row.store_sales = row.computed_store_sales
+        updated += 1
+
+    db.commit()
+    if errors:
+        return RedirectResponse(url=f"/entries?month={month}&msg=取り込み: 更新{updated}件 / スキップ{skipped}件 / エラー{errors}件", status_code=303)
+    return RedirectResponse(url=f"/entries?month={month}&msg=取り込み: 更新{updated}件 / スキップ{skipped}件", status_code=303)
 
