@@ -27,8 +27,13 @@
         </label>
 
         <label>
-          外注費
-          <input type="number" inputmode="decimal" step="0.01" name="outsourcing_cost" value="0" />
+          外注費（合計）
+          <input type="number" inputmode="decimal" step="0.01" name="outsourcing_cost" id="outsourcing_cost" value="0" />
+        </label>
+
+        <label class="grid__full">
+          外注費内訳（1行ずつ）
+          <textarea name="outsourcing_breakdown" id="outsourcing_breakdown" rows="2" placeholder="例: A 10000&#10;例: B 5000"></textarea>
         </label>
 
         <label>
@@ -98,6 +103,7 @@
             <th class="num">客数</th>
             <th class="num">客単価</th>
             <th class="num">外注費</th>
+            <th>外注費内訳</th>
             <th class="num">利用PT</th>
             <th class="num">店舗売上</th>
             <th class="num">現金</th>
@@ -115,6 +121,13 @@
             <td class="num">{{ r.customers }}</td>
             <td class="num">{{ r.unit_price or "" }}</td>
             <td class="num">{{ r.outsourcing_cost }}</td>
+            <td class="note">
+              {% if r.outsourcing_payments and (r.outsourcing_payments|length) > 0 %}
+                {% for p in r.outsourcing_payments %}
+                  {{ p.staff_name }}:{{ p.amount }}{% if not loop.last %}<br />{% endif %}
+                {% endfor %}
+              {% endif %}
+            </td>
             <td class="num">{{ r.used_points }}</td>
             <td class="num">{{ r.store_sales or "" }}</td>
             <td class="num">{{ r.cash_payment }}</td>
@@ -131,7 +144,7 @@
           </tr>
           {% endfor %}
           {% if rows|length == 0 %}
-          <tr><td colspan="12" class="muted">データがありません。</td></tr>
+          <tr><td colspan="13" class="muted">データがありません。</td></tr>
           {% endif %}
         </tbody>
       </table>

@@ -27,8 +27,13 @@
         </label>
 
         <label>
-          外注費
-          <input type="number" inputmode="decimal" step="0.01" name="outsourcing_cost" value="{{ row.outsourcing_cost }}" />
+          外注費（合計）
+          <input type="number" inputmode="decimal" step="0.01" name="outsourcing_cost" id="outsourcing_cost" value="{{ row.outsourcing_cost }}" />
+        </label>
+
+        <label class="grid__full">
+          外注費内訳（1行ずつ）
+          <textarea name="outsourcing_breakdown" id="outsourcing_breakdown" rows="2" placeholder="例: A 10000&#10;例: B 5000">{{ outsourcing_breakdown }}</textarea>
         </label>
 
         <label>
