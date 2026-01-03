@@ -217,6 +217,54 @@ def entries(request: Request, month: str | None = None, msg: str | None = None, 
         avg_customers_per_entry = (Decimal(total_customers) / Decimal(len(rows)))
         forecast_customers = int((avg_customers_per_entry * Decimal(dim)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
+    # Yearly summary (Jan-Dec of selected month year)
+    year = month_start.year
+    year_start = date(year, 1, 1)
+    year_end = date(year + 1, 1, 1)
+    year_rows = (
+        db.execute(
+            select(SalesDaily).where(SalesDaily.happened_on >= year_start, SalesDaily.happened_on < year_end).order_by(SalesDaily.happened_on.asc())
+        )
+        .scalars()
+        .all()
+    )
+
+    # monthly buckets
+    buckets: dict[int, dict[str, Any]] = {}
+    for m in range(1, 13):
+        buckets[m] = {
+            "month": m,
+            "sales": Decimal("0"),
+            "customers": 0,
+            "outsourcing": Decimal("0"),
+            "points": Decimal("0"),
+            "store_sales": Decimal("0"),
+            "cash": Decimal("0"),
+            "card": Decimal("0"),
+            "qr": Decimal("0"),
+        }
+    for r in year_rows:
+        m = r.happened_on.month
+        b = buckets[m]
+        b["sales"] += _as_money(r.sales)
+        b["customers"] += int(r.customers or 0)
+        b["outsourcing"] += _as_money(r.outsourcing_cost)
+        b["points"] += _as_money(r.used_points)
+        b["store_sales"] += _as_money(r.computed_store_sales)
+        b["cash"] += _as_money(r.computed_cash_payment)
+        b["card"] += _as_money(r.card_payment)
+        b["qr"] += _as_money(r.qr_payment)
+
+    yearly_total_sales = sum((buckets[m]["sales"] for m in range(1, 13)), Decimal("0"))
+    yearly_total_customers = sum((buckets[m]["customers"] for m in range(1, 13)), 0)
+    yearly_avg_unit_price = _calc_unit_price(yearly_total_sales, yearly_total_customers)
+    yearly_total_outsourcing = sum((buckets[m]["outsourcing"] for m in range(1, 13)), Decimal("0"))
+    yearly_total_points = sum((buckets[m]["points"] for m in range(1, 13)), Decimal("0"))
+    yearly_total_store_sales = sum((buckets[m]["store_sales"] for m in range(1, 13)), Decimal("0"))
+    yearly_total_cash = sum((buckets[m]["cash"] for m in range(1, 13)), Decimal("0"))
+    yearly_total_card = sum((buckets[m]["card"] for m in range(1, 13)), Decimal("0"))
+    yearly_total_qr = sum((buckets[m]["qr"] for m in range(1, 13)), Decimal("0"))
+
     ctx = {
         "request": request,
         "month": month_start.strftime("%Y-%m"),
@@ -237,6 +285,19 @@ def entries(request: Request, month: str | None = None, msg: str | None = None, 
             "total_card": total_card,
             "total_qr": total_qr,
         },
+        "year": year,
+        "yearly": {
+            "total_sales": yearly_total_sales,
+            "total_customers": yearly_total_customers,
+            "avg_unit_price": yearly_avg_unit_price,
+            "total_outsourcing": yearly_total_outsourcing,
+            "total_points": yearly_total_points,
+            "total_store_sales": yearly_total_store_sales,
+            "total_cash": yearly_total_cash,
+            "total_card": yearly_total_card,
+            "total_qr": yearly_total_qr,
+        },
+        "yearly_months": [buckets[m] for m in range(1, 13)],
         "today": date.today().isoformat(),
     }
     return templates.TemplateResponse("entries.html", ctx)
