@@ -136,22 +136,22 @@
           {% for r in rows %}
           <tr>
             <td>{{ r.happened_on }}</td>
-            <td class="num">{{ r.sales }}</td>
+            <td class="num">{{ r.sales|yen }}</td>
             <td class="num">{{ r.customers }}</td>
-            <td class="num">{{ r.unit_price or "" }}</td>
-            <td class="num">{{ r.outsourcing_cost }}</td>
+            <td class="num">{{ r.unit_price|yen }}</td>
+            <td class="num">{{ r.outsourcing_cost|yen }}</td>
             <td class="note">
               {% if r.outsourcing_payments and (r.outsourcing_payments|length) > 0 %}
                 {% for p in r.outsourcing_payments %}
-                  {{ p.amount }}{% if not loop.last %}+{% endif %}
+                  {{ p.amount|yen }}{% if not loop.last %}+{% endif %}
                 {% endfor %}
               {% endif %}
             </td>
-            <td class="num">{{ r.used_points }}</td>
-            <td class="num">{{ r.computed_store_sales }}</td>
-            <td class="num">{{ r.computed_cash_payment }}</td>
-            <td class="num">{{ r.card_payment }}</td>
-            <td class="num">{{ r.qr_payment }}</td>
+            <td class="num">{{ r.used_points|yen }}</td>
+            <td class="num">{{ r.computed_store_sales|yen }}</td>
+            <td class="num">{{ r.computed_cash_payment|yen }}</td>
+            <td class="num">{{ r.card_payment|yen }}</td>
+            <td class="num">{{ r.qr_payment|yen }}</td>
             <td class="note">{{ r.note or "" }}</td>
             <td class="actions">
               <a class="btn btn--tiny" href="/entries/{{ r.id }}/edit?month={{ month }}">編集</a>
