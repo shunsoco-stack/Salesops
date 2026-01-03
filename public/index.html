@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>施術入力 / บันทึกงานนวด</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="topbar">
+        <h1>施術入力 / บันทึกงานนวด</h1>
+        <a href="/admin">管理 / แอดมิน</a>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <div class="field">
+            <div class="label">日付 / วันที่</div>
+            <input id="date" type="date" />
+          </div>
+          <div class="field">
+            <div class="label">セラピスト / หมอนวด</div>
+            <select id="therapist"></select>
+            <div class="hint" id="therapistHint" style="margin-top:8px; display:none;">
+              まだセラピストが登録されていません。<a href="/admin">管理画面</a>で追加してください。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <div class="field" style="min-width:320px; flex:2;">
+            <div class="label">メニュー / รายการ</div>
+            <select id="menu"></select>
+          </div>
+          <div class="field">
+            <div class="label">施術料 / ค่าบริการ</div>
+            <input id="price" type="text" inputmode="numeric" readonly />
+          </div>
+          <div class="field">
+            <div class="label">日払い(取り分) / ยอดจ่าย</div>
+            <input id="payout" type="text" inputmode="numeric" readonly />
+          </div>
+        </div>
+        <div style="margin-top:12px; display:flex; gap:12px; flex-wrap:wrap;">
+          <button id="addBtn" class="btn btn-primary" type="button">追加 / เพิ่ม</button>
+          <button id="refreshBtn" class="btn btn-ghost" type="button">更新 / รีเฟรช</button>
+          <div class="hint">
+            1件ずつ「追加」を押してください（1日3〜7件でもOK）。
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="totals">
+          <div class="totalBox">
+            <div class="totalTitle">売上合計 / รวมยอดขาย</div>
+            <div class="totalValue" id="totalSales">¥0</div>
+          </div>
+          <div class="totalBox">
+            <div class="totalTitle">日払い合計 / ยอดจ่ายวันนี้</div>
+            <div class="totalValue" id="totalPayout">¥0</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="align-items:center; justify-content:space-between;">
+          <div>
+            <div style="font-size:18px; font-weight:900;">本日の入力 / รายการวันนี้</div>
+            <div class="hint">保存は自動です（追加/削除のたびに反映されます）。</div>
+          </div>
+        </div>
+
+        <div style="overflow:auto; margin-top:10px;">
+          <table>
+            <thead>
+              <tr>
+                <th>メニュー / รายการ</th>
+                <th class="right">施術料 / ค่าบริการ</th>
+                <th class="right">日払い / ยอดจ่าย</th>
+                <th class="actions"></th>
+              </tr>
+            </thead>
+            <tbody id="entries"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="hint">
+        ※ 管理画面で、メニュー価格や取り分(%)を後から変更できます。過去の入力は変わりません。
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
