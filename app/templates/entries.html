@@ -112,54 +112,6 @@
   </section>
 
   <section class="card">
-    <h2>年次集計（{{ year }}年 1月〜12月）</h2>
-    <div class="kpis">
-      <div class="kpi"><div class="kpi__label">売上合計</div><div class="kpi__value">{{ yearly.total_sales|yen }}</div></div>
-      <div class="kpi"><div class="kpi__label">客数合計</div><div class="kpi__value">{{ "{:,}".format(yearly.total_customers) }}</div></div>
-      <div class="kpi"><div class="kpi__label">客単価（売上/客数）</div><div class="kpi__value">{{ yearly.avg_unit_price|yen }}</div></div>
-      <div class="kpi"><div class="kpi__label">外注費合計</div><div class="kpi__value">{{ yearly.total_outsourcing|yen }}</div></div>
-      <div class="kpi"><div class="kpi__label">利用ポイント合計</div><div class="kpi__value">{{ yearly.total_points|yen }}</div></div>
-      <div class="kpi"><div class="kpi__label">店舗売上合計</div><div class="kpi__value">{{ yearly.total_store_sales|yen }}</div></div>
-      <div class="kpi"><div class="kpi__label">現金</div><div class="kpi__value">{{ yearly.total_cash|yen }}</div></div>
-      <div class="kpi"><div class="kpi__label">カード</div><div class="kpi__value">{{ yearly.total_card|yen }}</div></div>
-      <div class="kpi"><div class="kpi__label">QR</div><div class="kpi__value">{{ yearly.total_qr|yen }}</div></div>
-    </div>
-
-    <div class="table-wrap" style="margin-top: 12px;">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>月</th>
-            <th class="num">売上</th>
-            <th class="num">客数</th>
-            <th class="num">外注費</th>
-            <th class="num">利用PT</th>
-            <th class="num">店舗売上</th>
-            <th class="num">現金</th>
-            <th class="num">カード</th>
-            <th class="num">QR</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for m in yearly_months %}
-          <tr>
-            <td>{{ m.month }}月</td>
-            <td class="num">{{ m.sales|yen }}</td>
-            <td class="num">{{ "{:,}".format(m.customers) }}</td>
-            <td class="num">{{ m.outsourcing|yen }}</td>
-            <td class="num">{{ m.points|yen }}</td>
-            <td class="num">{{ m.store_sales|yen }}</td>
-            <td class="num">{{ m.cash|yen }}</td>
-            <td class="num">{{ m.card|yen }}</td>
-            <td class="num">{{ m.qr|yen }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <section class="card">
     <h2>一覧（{{ month }}）</h2>
     <div class="table-wrap">
       <table class="table">
@@ -213,6 +165,54 @@
           {% if rows|length == 0 %}
           <tr><td colspan="13" class="muted">データがありません。</td></tr>
           {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>年次集計（{{ year }}年 1月〜12月）</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi__label">売上合計</div><div class="kpi__value">{{ yearly.total_sales|yen }}</div></div>
+      <div class="kpi"><div class="kpi__label">客数合計</div><div class="kpi__value">{{ "{:,}".format(yearly.total_customers) }}</div></div>
+      <div class="kpi"><div class="kpi__label">客単価（売上/客数）</div><div class="kpi__value">{{ yearly.avg_unit_price|yen }}</div></div>
+      <div class="kpi"><div class="kpi__label">外注費合計</div><div class="kpi__value">{{ yearly.total_outsourcing|yen }}</div></div>
+      <div class="kpi"><div class="kpi__label">利用ポイント合計</div><div class="kpi__value">{{ yearly.total_points|yen }}</div></div>
+      <div class="kpi"><div class="kpi__label">店舗売上合計</div><div class="kpi__value">{{ yearly.total_store_sales|yen }}</div></div>
+      <div class="kpi"><div class="kpi__label">現金</div><div class="kpi__value">{{ yearly.total_cash|yen }}</div></div>
+      <div class="kpi"><div class="kpi__label">カード</div><div class="kpi__value">{{ yearly.total_card|yen }}</div></div>
+      <div class="kpi"><div class="kpi__label">QR</div><div class="kpi__value">{{ yearly.total_qr|yen }}</div></div>
+    </div>
+
+    <div class="table-wrap" style="margin-top: 12px;">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>月</th>
+            <th class="num">売上</th>
+            <th class="num">客数</th>
+            <th class="num">外注費</th>
+            <th class="num">利用PT</th>
+            <th class="num">店舗売上</th>
+            <th class="num">現金</th>
+            <th class="num">カード</th>
+            <th class="num">QR</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in yearly_months %}
+          <tr>
+            <td>{{ m.month }}月</td>
+            <td class="num">{{ m.sales|yen }}</td>
+            <td class="num">{{ "{:,}".format(m.customers) }}</td>
+            <td class="num">{{ m.outsourcing|yen }}</td>
+            <td class="num">{{ m.points|yen }}</td>
+            <td class="num">{{ m.store_sales|yen }}</td>
+            <td class="num">{{ m.cash|yen }}</td>
+            <td class="num">{{ m.card|yen }}</td>
+            <td class="num">{{ m.qr|yen }}</td>
+          </tr>
+          {% endfor %}
         </tbody>
       </table>
     </div>
