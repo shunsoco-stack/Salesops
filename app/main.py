@@ -572,6 +572,11 @@ async def import_payments(month: str = Form(...), file: UploadFile = File(...), 
                 return str(row[k])
         return None
 
+    fieldnames = set(reader.fieldnames)
+    has_card = any(k in fieldnames for k in ("カード決済", "card_payment", "カード", "Card"))
+    has_qr = any(k in fieldnames for k in ("QR決済", "qr_payment", "QR", "Qr"))
+    has_points = any(k in fieldnames for k in ("利用ポイント", "ポイント", "used_points", "points", "Points"))
+
     updated = 0
     skipped = 0
     errors = 0
@@ -582,10 +587,9 @@ async def import_payments(month: str = Form(...), file: UploadFile = File(...), 
                 errors += 1
                 continue
             dt = _parse_date_like(d_raw)
-            card_raw = pick(r, "カード決済", "card_payment", "カード", "Card")
-            qr_raw = pick(r, "QR決済", "qr_payment", "QR", "Qr")
-            card = _parse_money_like(card_raw)
-            qr = _parse_money_like(qr_raw)
+            card = _parse_money_like(pick(r, "カード決済", "card_payment", "カード", "Card")) if has_card else None
+            qr = _parse_money_like(pick(r, "QR決済", "qr_payment", "QR", "Qr")) if has_qr else None
+            points = _parse_money_like(pick(r, "利用ポイント", "ポイント", "used_points", "points", "Points")) if has_points else None
         except ValueError:
             errors += 1
             continue
@@ -595,8 +599,12 @@ async def import_payments(month: str = Form(...), file: UploadFile = File(...), 
             skipped += 1
             continue
 
-        row.card_payment = card
-        row.qr_payment = qr
+        if card is not None:
+            row.card_payment = card
+        if qr is not None:
+            row.qr_payment = qr
+        if points is not None:
+            row.used_points = points
         # recompute derived fields
         row.cash_payment = row.computed_cash_payment
         row.store_sales = row.computed_store_sales
