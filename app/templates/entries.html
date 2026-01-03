@@ -97,15 +97,15 @@
   <section class="card">
     <h2>月次集計（{{ month }}）</h2>
     <div class="kpis">
-      <div class="kpi"><div class="kpi__label">売上合計</div><div class="kpi__value">{{ summary.total_sales }}</div></div>
+      <div class="kpi"><div class="kpi__label">売上合計</div><div class="kpi__value">{{ summary.total_sales|yen }}</div></div>
       <div class="kpi"><div class="kpi__label">客数合計</div><div class="kpi__value">{{ summary.total_customers }}</div></div>
-      <div class="kpi"><div class="kpi__label">客単価（売上/客数）</div><div class="kpi__value">{{ summary.avg_unit_price or "" }}</div></div>
-      <div class="kpi"><div class="kpi__label">外注費合計</div><div class="kpi__value">{{ summary.total_outsourcing }}</div></div>
-      <div class="kpi"><div class="kpi__label">利用ポイント合計</div><div class="kpi__value">{{ summary.total_points }}</div></div>
-      <div class="kpi"><div class="kpi__label">店舗売上合計</div><div class="kpi__value">{{ summary.total_store_sales }}</div></div>
-      <div class="kpi"><div class="kpi__label">現金</div><div class="kpi__value">{{ summary.total_cash }}</div></div>
-      <div class="kpi"><div class="kpi__label">カード</div><div class="kpi__value">{{ summary.total_card }}</div></div>
-      <div class="kpi"><div class="kpi__label">QR</div><div class="kpi__value">{{ summary.total_qr }}</div></div>
+      <div class="kpi"><div class="kpi__label">客単価（売上/客数）</div><div class="kpi__value">{{ summary.avg_unit_price|yen }}</div></div>
+      <div class="kpi"><div class="kpi__label">外注費合計</div><div class="kpi__value">{{ summary.total_outsourcing|yen }}</div></div>
+      <div class="kpi"><div class="kpi__label">利用ポイント合計</div><div class="kpi__value">{{ summary.total_points|yen }}</div></div>
+      <div class="kpi"><div class="kpi__label">店舗売上合計</div><div class="kpi__value">{{ summary.total_store_sales|yen }}</div></div>
+      <div class="kpi"><div class="kpi__label">現金</div><div class="kpi__value">{{ summary.total_cash|yen }}</div></div>
+      <div class="kpi"><div class="kpi__label">カード</div><div class="kpi__value">{{ summary.total_card|yen }}</div></div>
+      <div class="kpi"><div class="kpi__label">QR</div><div class="kpi__value">{{ summary.total_qr|yen }}</div></div>
     </div>
   </section>
 

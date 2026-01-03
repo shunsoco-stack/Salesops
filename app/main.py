@@ -24,6 +24,16 @@ templates = Jinja2Templates(directory="app/templates")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
+def _yen(value: Any) -> str:
+    if value is None:
+        return ""
+    v = _as_money(value).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    return f"{int(v):,}円"
+
+
+templates.env.filters["yen"] = _yen
+
+
 @app.on_event("startup")
 def _startup() -> None:
     ensure_data_dir()
