@@ -61,6 +61,11 @@ def _month_range(month_start: date) -> tuple[date, date]:
     return month_start, next_month
 
 
+def _days_in_month(month_start: date) -> int:
+    start, end = _month_range(month_start)
+    return (end - start).days
+
+
 def _d(value: str | None, *, default: Decimal | None = Decimal("0")) -> Decimal | None:
     if value is None:
         return default
@@ -179,6 +184,7 @@ def root(request: Request) -> HTMLResponse:
 def entries(request: Request, month: str | None = None, msg: str | None = None, err: str | None = None, db: Session = Depends(get_db)) -> HTMLResponse:
     month_start = _parse_month(month)
     start, end = _month_range(month_start)
+    dim = _days_in_month(month_start)
 
     rows = (
         db.execute(
@@ -202,6 +208,15 @@ def entries(request: Request, month: str | None = None, msg: str | None = None, 
 
     avg_unit_price = _calc_unit_price(total_sales, total_customers)
 
+    # Forecast: average(actual entries) * days_in_month
+    forecast_sales: Decimal | None = None
+    forecast_customers: int | None = None
+    if len(rows) > 0:
+        avg_sales_per_entry = (total_sales / Decimal(len(rows)))
+        forecast_sales = (avg_sales_per_entry * Decimal(dim)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        avg_customers_per_entry = (Decimal(total_customers) / Decimal(len(rows)))
+        forecast_customers = int((avg_customers_per_entry * Decimal(dim)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
     ctx = {
         "request": request,
         "month": month_start.strftime("%Y-%m"),
@@ -212,6 +227,9 @@ def entries(request: Request, month: str | None = None, msg: str | None = None, 
             "total_sales": total_sales,
             "total_customers": total_customers,
             "avg_unit_price": avg_unit_price,
+            "forecast_sales": forecast_sales,
+            "forecast_customers": forecast_customers,
+            "days_in_month": dim,
             "total_outsourcing": total_outsourcing,
             "total_points": total_points,
             "total_store_sales": total_store_sales,
