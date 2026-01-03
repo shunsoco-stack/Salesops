@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>管理 / แอดมิน</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="topbar">
+        <h1>管理 / แอดมิน</h1>
+        <a href="/">入力 / บันทึก</a>
+      </div>
+
+      <div class="card">
+        <div style="font-size:18px; font-weight:900; margin-bottom:10px;">セラピスト / หมอนวด</div>
+        <div class="row">
+          <div class="field">
+            <div class="label">名前（日本語）/ ชื่อ (ญี่ปุ่น)</div>
+            <input id="therapistNameJa" type="text" placeholder="例：ナナ" />
+          </div>
+          <div class="field">
+            <div class="label">名前（ไทย）/ ชื่อ (ไทย)</div>
+            <input id="therapistNameTh" type="text" placeholder="例：นานา" />
+          </div>
+          <div class="field" style="min-width:160px; flex:0;">
+            <div class="label">&nbsp;</div>
+            <button id="addTherapistBtn" class="btn btn-primary" type="button">追加 / เพิ่ม</button>
+          </div>
+        </div>
+        <div style="overflow:auto; margin-top:12px;">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>名前</th>
+                <th>ไทย</th>
+                <th class="right">有効 / ใช้งาน</th>
+              </tr>
+            </thead>
+            <tbody id="therapists"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="font-size:18px; font-weight:900; margin-bottom:10px;">メニュー / รายการ</div>
+        <div class="hint" style="margin-bottom:10px;">
+          初回はホットペッパーから抽出した通常メニューが自動で入ります（`data/initial_menus.csv`）。<br />
+          価格や取り分(%)を変えても、過去の入力データは変わりません。
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <div class="label">メニュー名（日本語）/ รายการ (ญี่ปุ่น)</div>
+            <input id="menuNameJa" type="text" placeholder="例：タイ古式60分" />
+          </div>
+          <div class="field">
+            <div class="label">เมนู（ไทย）/ รายการ (ไทย)</div>
+            <input id="menuNameTh" type="text" placeholder="（任意）" />
+          </div>
+          <div class="field">
+            <div class="label">施術料(円) / ราคา(เยน)</div>
+            <input id="menuPrice" type="number" min="0" step="1" placeholder="5000" />
+          </div>
+          <div class="field">
+            <div class="label">取り分(%) / เปอร์เซ็นต์</div>
+            <input id="menuShare" type="number" min="0" max="100" step="1" value="50" />
+          </div>
+          <div class="field" style="min-width:160px; flex:0;">
+            <div class="label">&nbsp;</div>
+            <button id="addMenuBtn" class="btn btn-primary" type="button">追加 / เพิ่ม</button>
+          </div>
+        </div>
+
+        <div style="overflow:auto; margin-top:12px;">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>メニュー / รายการ</th>
+                <th>ไทย</th>
+                <th class="right">施術料(円)</th>
+                <th class="right">取り分(%)</th>
+                <th class="right">有効</th>
+                <th class="actions"></th>
+              </tr>
+            </thead>
+            <tbody id="menus"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="font-size:18px; font-weight:900; margin-bottom:10px;">メモ</div>
+        <div class="hint">
+          - 店舗のiPadで同じWi‑Fiにいる端末から見たい場合は、起動時に表示されるURL（例：`http://0.0.0.0:8000`）の0.0.0.0を、サーバーPCのIPに置き換えてアクセスします。<br />
+          - 本番運用は、クラウド（VPS等）に置くと店外からも使えます。
+        </div>
+      </div>
+    </div>
+
+    <script src="/admin.js"></script>
+  </body>
+</html>
