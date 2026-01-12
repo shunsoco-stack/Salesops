@@ -140,12 +140,14 @@
             <td class="num">{{ r.customers }}</td>
             <td class="num">{{ r.unit_price|yen }}</td>
             <td class="num">{{ r.outsourcing_cost|yen }}</td>
-            <td class="note">
-              {% if r.outsourcing_payments and (r.outsourcing_payments|length) > 0 %}
-                {% for p in r.outsourcing_payments %}
-                  {{ p.amount|yen }}{% if not loop.last %}+{% endif %}
-                {% endfor %}
-              {% endif %}
+            {% set ns = namespace(outsourcing_text="") %}
+            {% if r.outsourcing_payments and (r.outsourcing_payments|length) > 0 %}
+              {% for p in r.outsourcing_payments %}
+                {% set ns.outsourcing_text = ns.outsourcing_text ~ (p.amount|yen) ~ ("+" if not loop.last else "") %}
+              {% endfor %}
+            {% endif %}
+            <td class="breakdown" title="{{ ns.outsourcing_text }}">
+              <span class="breakdown__text">{{ ns.outsourcing_text }}</span>
             </td>
             <td class="num">{{ r.used_points|yen }}</td>
             <td class="num">{{ r.computed_store_sales|yen }}</td>

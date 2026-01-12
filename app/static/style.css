@@ -145,6 +145,14 @@ button, .btn {
 .table th { text-align: left; color: var(--muted); font-size: 12px; position: sticky; top: 0; background: rgba(8, 12, 24, 0.9); }
 .num { text-align: right; white-space: nowrap; }
 .note { max-width: 320px; white-space: pre-wrap; }
+.breakdown { max-width: 320px; }
+.breakdown__text {
+  display: block;
+  max-width: 320px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .actions { white-space: nowrap; }
 .muted { color: var(--muted); text-align: center; padding: 18px !important; }
 
