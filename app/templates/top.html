@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+  <section class="card">
+    <h2>トップ</h2>
+    <p>
+      売上・客数の入力、一覧、月次/年次の集計、CSV出力を行うローカルアプリです。
+    </p>
+    <div class="form__actions">
+      <a class="btn" href="/entries?month={{ month }}">入力・一覧へ</a>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>できること</h2>
+    <ul>
+      <li>日次の売上/客数/決済情報を入力</li>
+      <li>月次の合計・平均・予測を確認</li>
+      <li>年次の集計を一覧で確認</li>
+      <li>月次CSVの出力</li>
+    </ul>
+  </section>
+{% endblock %}

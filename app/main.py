@@ -177,7 +177,12 @@ def _decode_csv_bytes(data: bytes) -> str:
 @app.get("/", response_class=HTMLResponse)
 def root(request: Request) -> HTMLResponse:
     month = date.today().strftime("%Y-%m")
-    return RedirectResponse(url=f"/entries?month={month}", status_code=303)
+    ctx = {
+        "request": request,
+        "month": month,
+        "title": "トップ - 売上・客数管理",
+    }
+    return templates.TemplateResponse("top.html", ctx)
 
 
 @app.get("/entries", response_class=HTMLResponse)
