@@ -8,7 +8,11 @@
       <div class="grid">
         <label>
           発生日
-          <input type="date" name="happened_on" value="{{ today }}" required />
+          <div class="date-nav">
+            <button type="button" class="btn btn--tiny btn--secondary" data-day-shift="-1">前日</button>
+            <input type="date" name="happened_on" id="happened_on" value="{{ selected_day }}" required />
+            <button type="button" class="btn btn--tiny btn--secondary" data-day-shift="1">翌日</button>
+          </div>
         </label>
 
         <label>

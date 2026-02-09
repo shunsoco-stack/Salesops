@@ -164,6 +164,15 @@ def _parse_date_like(value: str) -> date:
     raise ValueError("日付形式が不正です（例: 2026-01-02）。")
 
 
+def _parse_day(day: str | None) -> date:
+    if not day:
+        return date.today()
+    try:
+        return _parse_date_like(day)
+    except ValueError:
+        return date.today()
+
+
 def _decode_csv_bytes(data: bytes) -> str:
     for enc in ("utf-8-sig", "cp932", "utf-8"):
         try:
@@ -186,10 +195,18 @@ def root(request: Request) -> HTMLResponse:
 
 
 @app.get("/entries", response_class=HTMLResponse)
-def entries(request: Request, month: str | None = None, msg: str | None = None, err: str | None = None, db: Session = Depends(get_db)) -> HTMLResponse:
+def entries(
+    request: Request,
+    month: str | None = None,
+    day: str | None = None,
+    msg: str | None = None,
+    err: str | None = None,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
     month_start = _parse_month(month)
     start, end = _month_range(month_start)
     dim = _days_in_month(month_start)
+    selected_day = _parse_day(day)
 
     rows = (
         db.execute(
@@ -303,7 +320,7 @@ def entries(request: Request, month: str | None = None, msg: str | None = None, 
             "total_qr": yearly_total_qr,
         },
         "yearly_months": [buckets[m] for m in range(1, 13)],
-        "today": date.today().isoformat(),
+        "selected_day": selected_day.isoformat(),
     }
     return templates.TemplateResponse("entries.html", ctx)
 
@@ -325,6 +342,10 @@ def create_or_update_entry(
 ):
     try:
         dt = datetime.strptime(happened_on, "%Y-%m-%d").date()
+    except ValueError:
+        return RedirectResponse(url=f"/entries?month={month}&err=入力値が不正です。", status_code=303)
+
+    try:
         sales_d = _d(sales) or Decimal("0")
         customers_i = _i(customers)
         outsourcing_d = _d(outsourcing_cost) or Decimal("0")
@@ -332,7 +353,7 @@ def create_or_update_entry(
         card_d = _d(card_payment) or Decimal("0")
         qr_d = _d(qr_payment) or Decimal("0")
     except (ValueError, InvalidOperation):
-        return RedirectResponse(url=f"/entries?month={month}&err=入力値が不正です。", status_code=303)
+        return RedirectResponse(url=f"/entries?month={month}&day={dt.isoformat()}&err=入力値が不正です。", status_code=303)
 
     breakdown_items: list[Decimal] | None
     if outsourcing_breakdown.strip() == "":
@@ -341,13 +362,16 @@ def create_or_update_entry(
         try:
             breakdown_items = _parse_outsourcing_amounts(outsourcing_breakdown)
         except ValueError as e:
-            return RedirectResponse(url=f"/entries?month={month}&err={str(e)}", status_code=303)
+            return RedirectResponse(url=f"/entries?month={month}&day={dt.isoformat()}&err={str(e)}", status_code=303)
 
     unit_price_d = _calc_unit_price(sales_d, customers_i)
     note_v = note.strip() or None
     computed_cash = sales_d - points_d - card_d - qr_d
     if computed_cash < 0:
-        return RedirectResponse(url=f"/entries?month={month}&err=カード+QR+ポイントが売上を超えています。", status_code=303)
+        return RedirectResponse(
+            url=f"/entries?month={month}&day={dt.isoformat()}&err=カード+QR+ポイントが売上を超えています。",
+            status_code=303,
+        )
 
     existing = db.execute(select(SalesDaily).where(SalesDaily.happened_on == dt)).scalar_one_or_none()
     if existing:
@@ -397,7 +421,7 @@ def create_or_update_entry(
         msg = "保存しました。"
 
     db.commit()
-    return RedirectResponse(url=f"/entries?month={month}&msg={msg}", status_code=303)
+    return RedirectResponse(url=f"/entries?month={month}&day={dt.isoformat()}&msg={msg}", status_code=303)
 
 
 @app.get("/entries/{entry_id}/edit", response_class=HTMLResponse)

@@ -8,6 +8,22 @@ function formatMoney(n) {
   return (Math.round(n * 100) / 100).toFixed(2);
 }
 
+function formatDateInputValue(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function shiftDateInput(days) {
+  const dateEl = document.getElementById("happened_on");
+  if (!dateEl) return;
+  const base = dateEl.value ? new Date(`${dateEl.value}T00:00:00`) : new Date();
+  if (!Number.isFinite(base.getTime())) return;
+  base.setDate(base.getDate() + days);
+  dateEl.value = formatDateInputValue(base);
+}
+
 function updateUnitPrice() {
   const salesEl = document.getElementById("sales");
   const customersEl = document.getElementById("customers");
@@ -80,6 +96,15 @@ document.addEventListener("input", (e) => {
   if (id === "sales" || id === "used_points" || id === "outsourcing_cost" || id === "card_payment" || id === "qr_payment") {
     updateDerivedFields();
   }
+});
+
+document.addEventListener("click", (e) => {
+  const button = e.target && e.target.closest("[data-day-shift]");
+  if (!button) return;
+  e.preventDefault();
+  const shift = Number(button.dataset.dayShift);
+  if (!Number.isFinite(shift) || shift === 0) return;
+  shiftDateInput(shift);
 });
 
 document.addEventListener("DOMContentLoaded", () => {

@@ -89,6 +89,15 @@ input[type="month"]::-webkit-calendar-picker-indicator {
   gap: 12px;
 }
 .grid__full { grid-column: 1 / -1; }
+.date-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.date-nav input {
+  flex: 1;
+  min-width: 0;
+}
 
 .form__actions {
   display: flex;
