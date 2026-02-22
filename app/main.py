@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+import unicodedata
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
@@ -156,11 +157,31 @@ def _parse_date_like(value: str) -> date:
     v = value.strip()
     if v == "":
         raise ValueError("日付が空です。")
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d"):
+    for fmt in (
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+        "%Y.%m.%d",
+        "%Y-%m-%d %H:%M",
+        "%Y/%m/%d %H:%M",
+        "%Y.%m.%d %H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y/%m/%d %H:%M:%S",
+        "%Y.%m.%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%dT%H:%M:%S",
+    ):
         try:
             return datetime.strptime(v, fmt).date()
         except ValueError:
             continue
+    m = re.search(r"\d{4}[-/.]\d{1,2}[-/.]\d{1,2}", v)
+    if m:
+        raw = m.group(0)
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d"):
+            try:
+                return datetime.strptime(raw, fmt).date()
+            except ValueError:
+                continue
     raise ValueError("日付形式が不正です（例: 2026-01-02）。")
 
 
@@ -183,10 +204,11 @@ def _decode_csv_bytes(data: bytes) -> str:
     return data.decode("utf-8", errors="replace")
 
 
-_CSV_DATE_KEYS = ("発生日", "日付", "date", "Date")
+_CSV_DATE_KEYS = ("発生日", "日付", "date", "Date", "決済日時", "決済日", "利用日時", "取引日時")
 _CSV_CARD_KEYS = ("カード決済", "card_payment", "カード", "Card")
 _CSV_QR_KEYS = ("QR決済", "qr_payment", "QR", "Qr")
 _CSV_POINTS_KEYS = ("利用ポイント", "ポイント", "used_points", "points", "Points")
+_CSV_AMOUNT_KEYS = ("決済金額", "決済金額(税込)", "決済金額（税抜）", "請求金額", "支払金額", "取引金額")
 
 
 def _pick_csv_value(row: dict[str, Any], keys: tuple[str, ...]) -> str | None:
@@ -200,11 +222,61 @@ def _has_any_csv_header(fieldnames: set[str], keys: tuple[str, ...]) -> bool:
     return any(k in fieldnames for k in keys)
 
 
+def _csv_value_by_index(row: dict[str, Any], fieldnames: list[str], idx: int) -> str | None:
+    if idx < 0 or idx >= len(fieldnames):
+        return None
+    key = fieldnames[idx]
+    if key not in row or row[key] is None:
+        return None
+    value = str(row[key]).strip()
+    if value == "":
+        return None
+    return value
+
+
+def _looks_like_statement_csv(fieldnames: list[str], rows: list[dict[str, Any]]) -> bool:
+    # Heuristic for settlement statement format:
+    # [id, datetime, name, amount, used_points, ...]
+    if len(fieldnames) < 5:
+        return False
+    checked = 0
+    for row in rows:
+        dt = _csv_value_by_index(row, fieldnames, 1)
+        amount = _csv_value_by_index(row, fieldnames, 3)
+        if not dt or not amount:
+            continue
+        checked += 1
+        try:
+            _parse_date_like(dt or "")
+            _parse_money_like(amount)
+            return True
+        except ValueError:
+            if checked >= 5:
+                break
+            continue
+    return False
+
+
+def _infer_amount_target(filename: str | None) -> str:
+    normalized = unicodedata.normalize("NFKC", filename or "").lower()
+    if "qr" in normalized:
+        return "qr"
+    return "card"
+
+
 def _new_daily_payment_bucket() -> dict[str, Decimal]:
     return {
         "card": Decimal("0"),
         "qr": Decimal("0"),
         "points": Decimal("0"),
+    }
+
+
+def _new_daily_presence_bucket() -> dict[str, bool]:
+    return {
+        "card": False,
+        "qr": False,
+        "points": False,
     }
 
 
@@ -619,7 +691,7 @@ async def import_payments(month: str = Form(...), files: list[UploadFile] = File
         return RedirectResponse(url=f"/entries?month={month}&err=CSV以外のファイルがあります: {names}", status_code=303)
 
     daily_totals: dict[date, dict[str, Decimal]] = {}
-    provided_columns = {"card": False, "qr": False, "points": False}
+    daily_presence: dict[date, dict[str, bool]] = {}
     row_errors = 0
     file_errors = 0
 
@@ -631,31 +703,58 @@ async def import_payments(month: str = Form(...), files: list[UploadFile] = File
             file_errors += 1
             continue
 
-        fieldnames = set(reader.fieldnames)
-        has_card = _has_any_csv_header(fieldnames, _CSV_CARD_KEYS)
-        has_qr = _has_any_csv_header(fieldnames, _CSV_QR_KEYS)
-        has_points = _has_any_csv_header(fieldnames, _CSV_POINTS_KEYS)
-        if not (has_card or has_qr or has_points):
+        rows = list(reader)
+        fieldnames = [f or "" for f in reader.fieldnames]
+        fieldname_set = set(fieldnames)
+
+        has_card = _has_any_csv_header(fieldname_set, _CSV_CARD_KEYS)
+        has_qr = _has_any_csv_header(fieldname_set, _CSV_QR_KEYS)
+        has_points = _has_any_csv_header(fieldname_set, _CSV_POINTS_KEYS)
+        has_amount = _has_any_csv_header(fieldname_set, _CSV_AMOUNT_KEYS)
+        is_statement = False
+        amount_target: str | None = None
+        if not (has_card or has_qr):
+            is_statement = _looks_like_statement_csv(fieldnames, rows)
+            if has_amount or is_statement:
+                amount_target = _infer_amount_target(file.filename)
+
+        if not (has_card or has_qr or has_points or has_amount or is_statement):
             file_errors += 1
             continue
 
-        provided_columns["card"] = provided_columns["card"] or has_card
-        provided_columns["qr"] = provided_columns["qr"] or has_qr
-        provided_columns["points"] = provided_columns["points"] or has_points
-
-        for r in reader:
+        for r in rows:
             try:
                 d_raw = _pick_csv_value(r, _CSV_DATE_KEYS)
+                if not d_raw and (has_amount or is_statement):
+                    d_raw = _csv_value_by_index(r, fieldnames, 1)
                 if not d_raw:
                     raise ValueError("日付が空です。")
                 dt = _parse_date_like(d_raw)
                 bucket = daily_totals.setdefault(dt, _new_daily_payment_bucket())
+                presence = daily_presence.setdefault(dt, _new_daily_presence_bucket())
+
                 if has_card:
                     bucket["card"] += _parse_money_like(_pick_csv_value(r, _CSV_CARD_KEYS))
+                    presence["card"] = True
                 if has_qr:
                     bucket["qr"] += _parse_money_like(_pick_csv_value(r, _CSV_QR_KEYS))
+                    presence["qr"] = True
                 if has_points:
                     bucket["points"] += _parse_money_like(_pick_csv_value(r, _CSV_POINTS_KEYS))
+                    presence["points"] = True
+
+                if amount_target is not None:
+                    amount_raw = _pick_csv_value(r, _CSV_AMOUNT_KEYS)
+                    if amount_raw is None and is_statement:
+                        amount_raw = _csv_value_by_index(r, fieldnames, 3)
+                    if amount_raw is not None:
+                        bucket[amount_target] += _parse_money_like(amount_raw)
+                        presence[amount_target] = True
+
+                    if is_statement and not has_points:
+                        points_raw = _csv_value_by_index(r, fieldnames, 4)
+                        bucket["points"] += _parse_money_like(points_raw)
+                        presence["points"] = True
             except ValueError:
                 row_errors += 1
                 continue
@@ -674,19 +773,23 @@ async def import_payments(month: str = Form(...), files: list[UploadFile] = File
 
     for dt in sorted(daily_totals.keys()):
         totals = daily_totals[dt]
+        presence = daily_presence.get(dt, _new_daily_presence_bucket())
         row = db.execute(select(SalesDaily).where(SalesDaily.happened_on == dt)).scalar_one_or_none()
+        card_total = totals["card"] if presence["card"] else Decimal("0")
+        qr_total = totals["qr"] if presence["qr"] else Decimal("0")
+        points_total = totals["points"] if presence["points"] else Decimal("0")
 
         if row is None:
-            payments_total = totals["card"] + totals["qr"] + totals["points"]
+            payments_total = card_total + qr_total + points_total
             row = SalesDaily(
                 happened_on=dt,
                 sales=payments_total,
                 customers=0,
                 unit_price=None,
                 outsourcing_cost=Decimal("0"),
-                used_points=totals["points"],
-                card_payment=totals["card"],
-                qr_payment=totals["qr"],
+                used_points=points_total,
+                card_payment=card_total,
+                qr_payment=qr_total,
                 note=auto_note,
             )
             row.store_sales = row.computed_store_sales
@@ -695,9 +798,9 @@ async def import_payments(month: str = Form(...), files: list[UploadFile] = File
             created += 1
             continue
 
-        new_card = totals["card"] if provided_columns["card"] else _as_money(row.card_payment)
-        new_qr = totals["qr"] if provided_columns["qr"] else _as_money(row.qr_payment)
-        new_points = totals["points"] if provided_columns["points"] else _as_money(row.used_points)
+        new_card = card_total if presence["card"] else _as_money(row.card_payment)
+        new_qr = qr_total if presence["qr"] else _as_money(row.qr_payment)
+        new_points = points_total if presence["points"] else _as_money(row.used_points)
         payments_total = new_card + new_qr + new_points
         current_sales = _as_money(row.sales)
 
