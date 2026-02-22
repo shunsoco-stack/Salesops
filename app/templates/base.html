@@ -4,36 +4,93 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ title or "売上・客数管理" }}</title>
-    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/remixicon@4.6.0/fonts/remixicon.css" />
+    <link rel="stylesheet" href="/static/style.css?v=20260222a" />
   </head>
   <body>
-    <header class="header">
-      <div class="container header__inner">
-        <div class="header__title">売上・客数管理（ローカル）</div>
-        <div class="header__right">
-          <form action="/entries" method="get" class="month-picker">
-            <label>
-              対象月
-              <input type="month" name="month" value="{{ month }}" />
-            </label>
-            <button type="submit">表示</button>
-          </form>
+    <div class="app-layout">
+      <aside class="sidebar">
+        {% set sec = current_section or "" %}
+        <div class="sidebar__brand">
+          <div class="sidebar__logo"><i class="ri-line-chart-line"></i></div>
+          <div class="sidebar__title">売上管理システム</div>
         </div>
+        <nav class="sidebar__nav">
+          <a class="sidebar__item {% if request.url.path == '/' %}is-active{% endif %}" href="/">
+            <i class="ri-dashboard-line"></i>
+            <span>トップ</span>
+          </a>
+          <a class="sidebar__item {% if sec == 'dashboard' %}is-active{% endif %}" href="/entries?month={{ month or '' }}&section=dashboard">
+            <i class="ri-dashboard-3-line"></i>
+            <span>ダッシュボード</span>
+          </a>
+          <a class="sidebar__item {% if sec == 'daily-input' %}is-active{% endif %}" href="/entries?month={{ month or '' }}&section=daily-input">
+            <i class="ri-pencil-line"></i>
+            <span>売上入力</span>
+          </a>
+          <a class="sidebar__item {% if sec == 'csv-import' %}is-active{% endif %}" href="/entries?month={{ month or '' }}&section=csv-import">
+            <i class="ri-file-upload-line"></i>
+            <span>CSV取込</span>
+          </a>
+          <a class="sidebar__item {% if sec == 'sales' %}is-active{% endif %}" href="/entries?month={{ month or '' }}&section=sales">
+            <i class="ri-file-list-3-line"></i>
+            <span>売上一覧</span>
+          </a>
+          <a class="sidebar__item {% if sec == 'reports' %}is-active{% endif %}" href="/entries?month={{ month or '' }}&section=reports">
+            <i class="ri-file-chart-line"></i>
+            <span>レポート</span>
+          </a>
+          <a class="sidebar__item {% if sec == 'analytics' %}is-active{% endif %}" href="/entries?month={{ month or '' }}&section=analytics">
+            <i class="ri-bar-chart-box-line"></i>
+            <span>分析</span>
+          </a>
+          <a class="sidebar__item {% if sec == 'settings' %}is-active{% endif %}" href="/entries?month={{ month or '' }}&section=settings">
+            <i class="ri-settings-3-line"></i>
+            <span>設定</span>
+          </a>
+          <a class="sidebar__item {% if sec == 'export' %}is-active{% endif %}" href="/entries?month={{ month or '' }}&section=export">
+            <i class="ri-download-2-line"></i>
+            <span>エクスポート</span>
+          </a>
+        </nav>
+      </aside>
+
+      <div class="app-main">
+        <header class="topbar">
+          <div>
+            <h1 class="topbar__title">{{ title or "売上管理システム" }}</h1>
+            <p class="topbar__subtitle">日次入力 / CSV取込 / 月次・年次集計</p>
+          </div>
+          <div class="topbar__right">
+            <form action="/entries" method="get" class="month-picker">
+              {% if sec and sec != 'home' %}
+              <input type="hidden" name="section" value="{{ sec }}" />
+              {% endif %}
+              <label>
+                対象月
+                <input type="month" name="month" value="{{ month or '' }}" />
+              </label>
+              <button type="submit">表示</button>
+            </form>
+          </div>
+        </header>
+
+        <main class="container">
+          {% if msg %}
+          <div class="alert alert--ok">{{ msg }}</div>
+          {% endif %}
+          {% if err %}
+          <div class="alert alert--err">{{ err }}</div>
+          {% endif %}
+
+          {% block content %}{% endblock %}
+        </main>
       </div>
-    </header>
+    </div>
 
-    <main class="container">
-      {% if msg %}
-      <div class="alert alert--ok">{{ msg }}</div>
-      {% endif %}
-      {% if err %}
-      <div class="alert alert--err">{{ err }}</div>
-      {% endif %}
-
-      {% block content %}{% endblock %}
-    </main>
-
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20260222a"></script>
   </body>
 </html>
 

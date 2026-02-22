@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+import unicodedata
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
@@ -156,11 +157,31 @@ def _parse_date_like(value: str) -> date:
     v = value.strip()
     if v == "":
         raise ValueError("日付が空です。")
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d"):
+    for fmt in (
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+        "%Y.%m.%d",
+        "%Y-%m-%d %H:%M",
+        "%Y/%m/%d %H:%M",
+        "%Y.%m.%d %H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y/%m/%d %H:%M:%S",
+        "%Y.%m.%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%dT%H:%M:%S",
+    ):
         try:
             return datetime.strptime(v, fmt).date()
         except ValueError:
             continue
+    m = re.search(r"\d{4}[-/.]\d{1,2}[-/.]\d{1,2}", v)
+    if m:
+        raw = m.group(0)
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d"):
+            try:
+                return datetime.strptime(raw, fmt).date()
+            except ValueError:
+                continue
     raise ValueError("日付形式が不正です（例: 2026-01-02）。")
 
 
@@ -173,6 +194,27 @@ def _parse_day(day: str | None) -> date:
         return date.today()
 
 
+_ENTRY_SECTIONS = {
+    "dashboard",
+    "daily-input",
+    "csv-import",
+    "sales",
+    "reports",
+    "analytics",
+    "settings",
+    "export",
+}
+
+
+def _parse_entry_section(section: str | None) -> str:
+    if not section:
+        return "dashboard"
+    s = section.strip()
+    if s in _ENTRY_SECTIONS:
+        return s
+    return "dashboard"
+
+
 def _decode_csv_bytes(data: bytes) -> str:
     for enc in ("utf-8-sig", "cp932", "utf-8"):
         try:
@@ -183,13 +225,91 @@ def _decode_csv_bytes(data: bytes) -> str:
     return data.decode("utf-8", errors="replace")
 
 
+_CSV_DATE_KEYS = ("発生日", "日付", "date", "Date", "決済日時", "決済日", "利用日時", "取引日時")
+_CSV_CARD_KEYS = ("カード決済", "card_payment", "カード", "Card")
+_CSV_QR_KEYS = ("QR決済", "qr_payment", "QR", "Qr")
+_CSV_POINTS_KEYS = ("利用ポイント", "ポイント", "used_points", "points", "Points")
+_CSV_GIFT_KEYS = ("利用ギフト券", "ギフト券", "gift", "used_gift")
+_CSV_AMOUNT_KEYS = ("決済金額", "決済金額(税込)", "決済金額（税抜）", "請求金額", "支払金額", "取引金額")
+
+
+def _pick_csv_value(row: dict[str, Any], keys: tuple[str, ...]) -> str | None:
+    for key in keys:
+        if key in row and row[key] is not None and str(row[key]).strip() != "":
+            return str(row[key])
+    return None
+
+
+def _has_any_csv_header(fieldnames: set[str], keys: tuple[str, ...]) -> bool:
+    return any(k in fieldnames for k in keys)
+
+
+def _csv_value_by_index(row: dict[str, Any], fieldnames: list[str], idx: int) -> str | None:
+    if idx < 0 or idx >= len(fieldnames):
+        return None
+    key = fieldnames[idx]
+    if key not in row or row[key] is None:
+        return None
+    value = str(row[key]).strip()
+    if value == "":
+        return None
+    return value
+
+
+def _looks_like_statement_csv(fieldnames: list[str], rows: list[dict[str, Any]]) -> bool:
+    # Heuristic for settlement statement format:
+    # [id, datetime, name, amount, used_points, ...]
+    if len(fieldnames) < 5:
+        return False
+    checked = 0
+    for row in rows:
+        dt = _csv_value_by_index(row, fieldnames, 1)
+        amount = _csv_value_by_index(row, fieldnames, 3)
+        if not dt or not amount:
+            continue
+        checked += 1
+        try:
+            _parse_date_like(dt or "")
+            _parse_money_like(amount)
+            return True
+        except ValueError:
+            if checked >= 5:
+                break
+            continue
+    return False
+
+
+def _infer_amount_target(filename: str | None) -> str:
+    normalized = unicodedata.normalize("NFKC", filename or "").lower()
+    if "qr" in normalized:
+        return "qr"
+    return "card"
+
+
+def _new_daily_payment_bucket() -> dict[str, Decimal]:
+    return {
+        "card": Decimal("0"),
+        "qr": Decimal("0"),
+        "points": Decimal("0"),
+    }
+
+
+def _new_daily_presence_bucket() -> dict[str, bool]:
+    return {
+        "card": False,
+        "qr": False,
+        "points": False,
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 def root(request: Request) -> HTMLResponse:
     month = date.today().strftime("%Y-%m")
     ctx = {
         "request": request,
         "month": month,
-        "title": "トップ - 売上・客数管理",
+        "title": "ダッシュボード",
+        "current_section": "home",
     }
     return templates.TemplateResponse("top.html", ctx)
 
@@ -199,6 +319,7 @@ def entries(
     request: Request,
     month: str | None = None,
     day: str | None = None,
+    section: str | None = None,
     msg: str | None = None,
     err: str | None = None,
     db: Session = Depends(get_db),
@@ -207,6 +328,7 @@ def entries(
     start, end = _month_range(month_start)
     dim = _days_in_month(month_start)
     selected_day = _parse_day(day)
+    current_section = _parse_entry_section(section)
 
     rows = (
         db.execute(
@@ -286,10 +408,40 @@ def entries(
     yearly_total_cash = sum((buckets[m]["cash"] for m in range(1, 13)), Decimal("0"))
     yearly_total_card = sum((buckets[m]["card"] for m in range(1, 13)), Decimal("0"))
     yearly_total_qr = sum((buckets[m]["qr"] for m in range(1, 13)), Decimal("0"))
+    max_monthly_sales = max((buckets[m]["sales"] for m in range(1, 13)), default=Decimal("0"))
+    analytics_months: list[dict[str, Any]] = []
+    for m in range(1, 13):
+        sales_m = buckets[m]["sales"]
+        ratio = 0
+        if max_monthly_sales > 0:
+            ratio = int(((sales_m / max_monthly_sales) * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        analytics_months.append(
+            {
+                "month": m,
+                "sales": sales_m,
+                "customers": buckets[m]["customers"],
+                "sales_ratio": ratio,
+                "card": buckets[m]["card"],
+                "qr": buckets[m]["qr"],
+                "points": buckets[m]["points"],
+            }
+        )
+
+    section_title_map = {
+        "dashboard": f"{month_start.strftime('%Y-%m')} ダッシュボード",
+        "daily-input": "売上入力",
+        "csv-import": "CSV取込",
+        "sales": "売上一覧",
+        "reports": "レポート",
+        "analytics": "分析",
+        "settings": "設定",
+        "export": "エクスポート",
+    }
 
     ctx = {
         "request": request,
         "month": month_start.strftime("%Y-%m"),
+        "title": section_title_map.get(current_section, f"{month_start.strftime('%Y-%m')} 売上入力・一覧"),
         "rows": rows,
         "msg": msg,
         "err": err,
@@ -320,6 +472,8 @@ def entries(
             "total_qr": yearly_total_qr,
         },
         "yearly_months": [buckets[m] for m in range(1, 13)],
+        "analytics_months": analytics_months,
+        "current_section": current_section,
         "selected_day": selected_day.isoformat(),
     }
     return templates.TemplateResponse("entries.html", ctx)
@@ -329,6 +483,7 @@ def entries(
 def create_or_update_entry(
     request: Request,
     month: str = Form(...),
+    section: str = Form("daily-input"),
     happened_on: str = Form(...),
     sales: str = Form("0"),
     customers: str = Form("0"),
@@ -340,10 +495,11 @@ def create_or_update_entry(
     note: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    current_section = _parse_entry_section(section)
     try:
         dt = datetime.strptime(happened_on, "%Y-%m-%d").date()
     except ValueError:
-        return RedirectResponse(url=f"/entries?month={month}&err=入力値が不正です。", status_code=303)
+        return RedirectResponse(url=f"/entries?month={month}&section={current_section}&err=入力値が不正です。", status_code=303)
 
     try:
         sales_d = _d(sales) or Decimal("0")
@@ -353,7 +509,10 @@ def create_or_update_entry(
         card_d = _d(card_payment) or Decimal("0")
         qr_d = _d(qr_payment) or Decimal("0")
     except (ValueError, InvalidOperation):
-        return RedirectResponse(url=f"/entries?month={month}&day={dt.isoformat()}&err=入力値が不正です。", status_code=303)
+        return RedirectResponse(
+            url=f"/entries?month={month}&section={current_section}&day={dt.isoformat()}&err=入力値が不正です。",
+            status_code=303,
+        )
 
     breakdown_items: list[Decimal] | None
     if outsourcing_breakdown.strip() == "":
@@ -362,14 +521,17 @@ def create_or_update_entry(
         try:
             breakdown_items = _parse_outsourcing_amounts(outsourcing_breakdown)
         except ValueError as e:
-            return RedirectResponse(url=f"/entries?month={month}&day={dt.isoformat()}&err={str(e)}", status_code=303)
+            return RedirectResponse(
+                url=f"/entries?month={month}&section={current_section}&day={dt.isoformat()}&err={str(e)}",
+                status_code=303,
+            )
 
     unit_price_d = _calc_unit_price(sales_d, customers_i)
     note_v = note.strip() or None
     computed_cash = sales_d - points_d - card_d - qr_d
     if computed_cash < 0:
         return RedirectResponse(
-            url=f"/entries?month={month}&day={dt.isoformat()}&err=カード+QR+ポイントが売上を超えています。",
+            url=f"/entries?month={month}&section={current_section}&day={dt.isoformat()}&err=カード+QR+ポイントが売上を超えています。",
             status_code=303,
         )
 
@@ -421,11 +583,19 @@ def create_or_update_entry(
         msg = "保存しました。"
 
     db.commit()
-    return RedirectResponse(url=f"/entries?month={month}&day={dt.isoformat()}&msg={msg}", status_code=303)
+    return RedirectResponse(url=f"/entries?month={month}&section={current_section}&day={dt.isoformat()}&msg={msg}", status_code=303)
 
 
 @app.get("/entries/{entry_id}/edit", response_class=HTMLResponse)
-def edit_entry(entry_id: int, request: Request, month: str | None = None, err: str | None = None, db: Session = Depends(get_db)) -> HTMLResponse:
+def edit_entry(
+    entry_id: int,
+    request: Request,
+    month: str | None = None,
+    section: str | None = None,
+    err: str | None = None,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    current_section = _parse_entry_section(section or "sales")
     row = (
         db.execute(select(SalesDaily).options(selectinload(SalesDaily.outsourcing_payments)).where(SalesDaily.id == entry_id))
         .scalars()
@@ -433,12 +603,15 @@ def edit_entry(entry_id: int, request: Request, month: str | None = None, err: s
     )
     if not row:
         m = _parse_month(month).strftime("%Y-%m")
-        return RedirectResponse(url=f"/entries?month={m}&err=対象データが見つかりません。", status_code=303)
+        return RedirectResponse(url=f"/entries?month={m}&section={current_section}&err=対象データが見つかりません。", status_code=303)
 
     month_start = _parse_month(month) if month else date(row.happened_on.year, row.happened_on.month, 1)
     ctx = {
         "request": request,
         "month": month_start.strftime("%Y-%m"),
+        "title": "売上データ編集",
+        "current_section": current_section,
+        "section": current_section,
         "row": row,
         "outsourcing_breakdown": _format_outsourcing_amounts(row.outsourcing_payments or []),
         "err": err,
@@ -450,6 +623,7 @@ def edit_entry(entry_id: int, request: Request, month: str | None = None, err: s
 def update_entry(
     entry_id: int,
     month: str = Form(...),
+    section: str = Form("sales"),
     happened_on: str = Form(...),
     sales: str = Form("0"),
     customers: str = Form("0"),
@@ -461,9 +635,10 @@ def update_entry(
     note: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    current_section = _parse_entry_section(section)
     row = db.get(SalesDaily, entry_id)
     if not row:
-        return RedirectResponse(url=f"/entries?month={month}&err=対象データが見つかりません。", status_code=303)
+        return RedirectResponse(url=f"/entries?month={month}&section={current_section}&err=対象データが見つかりません。", status_code=303)
 
     try:
         dt = datetime.strptime(happened_on, "%Y-%m-%d").date()
@@ -474,7 +649,10 @@ def update_entry(
         card_d = _d(card_payment) or Decimal("0")
         qr_d = _d(qr_payment) or Decimal("0")
     except (ValueError, InvalidOperation):
-        return RedirectResponse(url=f"/entries/{entry_id}/edit?month={month}&err=入力値が不正です。", status_code=303)
+        return RedirectResponse(
+            url=f"/entries/{entry_id}/edit?month={month}&section={current_section}&err=入力値が不正です。",
+            status_code=303,
+        )
 
     if outsourcing_breakdown.strip() == "":
         breakdown_items = []  # allow clearing breakdown
@@ -482,18 +660,27 @@ def update_entry(
         try:
             breakdown_items = _parse_outsourcing_amounts(outsourcing_breakdown)
         except ValueError as e:
-            return RedirectResponse(url=f"/entries/{entry_id}/edit?month={month}&err={str(e)}", status_code=303)
+            return RedirectResponse(
+                url=f"/entries/{entry_id}/edit?month={month}&section={current_section}&err={str(e)}",
+                status_code=303,
+            )
 
     computed_cash = sales_d - points_d - card_d - qr_d
     if computed_cash < 0:
-        return RedirectResponse(url=f"/entries/{entry_id}/edit?month={month}&err=カード+QR+ポイントが売上を超えています。", status_code=303)
+        return RedirectResponse(
+            url=f"/entries/{entry_id}/edit?month={month}&section={current_section}&err=カード+QR+ポイントが売上を超えています。",
+            status_code=303,
+        )
     unit_price_d = _calc_unit_price(sales_d, customers_i)
     note_v = note.strip() or None
 
     # If happened_on changes, enforce uniqueness by date.
     other = db.execute(select(SalesDaily).where(SalesDaily.happened_on == dt, SalesDaily.id != entry_id)).scalar_one_or_none()
     if other:
-        return RedirectResponse(url=f"/entries/{entry_id}/edit?month={month}&err=同じ発生日のデータが既に存在します。", status_code=303)
+        return RedirectResponse(
+            url=f"/entries/{entry_id}/edit?month={month}&section={current_section}&err=同じ発生日のデータが既に存在します。",
+            status_code=303,
+        )
 
     row.happened_on = dt
     row.sales = sales_d
@@ -513,17 +700,18 @@ def update_entry(
     row.cash_payment = row.computed_cash_payment
     db.commit()
 
-    return RedirectResponse(url=f"/entries?month={month}&msg=更新しました。", status_code=303)
+    return RedirectResponse(url=f"/entries?month={month}&section={current_section}&msg=更新しました。", status_code=303)
 
 
 @app.post("/entries/{entry_id}/delete")
-def delete_entry(entry_id: int, month: str = Form(...), db: Session = Depends(get_db)):
+def delete_entry(entry_id: int, month: str = Form(...), section: str = Form("sales"), db: Session = Depends(get_db)):
+    current_section = _parse_entry_section(section)
     row = db.get(SalesDaily, entry_id)
     if row:
         db.execute(delete(OutsourcingPayment).where(OutsourcingPayment.sales_daily_id == row.id))
         db.delete(row)
         db.commit()
-    return RedirectResponse(url=f"/entries?month={month}&msg=削除しました。", status_code=303)
+    return RedirectResponse(url=f"/entries?month={month}&section={current_section}&msg=削除しました。", status_code=303)
 
 
 @app.get("/export.csv")
@@ -584,63 +772,183 @@ def export_csv(month: str | None = None, db: Session = Depends(get_db)):
 
 
 @app.post("/import-payments")
-async def import_payments(month: str = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db)):
-    if not file.filename.lower().endswith(".csv"):
-        return RedirectResponse(url=f"/entries?month={month}&err=CSVファイルを選んでください。", status_code=303)
+async def import_payments(
+    month: str = Form(...),
+    section: str = Form("csv-import"),
+    files: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+):
+    current_section = _parse_entry_section(section)
+    if not files:
+        return RedirectResponse(url=f"/entries?month={month}&section={current_section}&err=CSVファイルを選んでください。", status_code=303)
 
-    raw = await file.read()
-    text = _decode_csv_bytes(raw)
-    reader = csv.DictReader(io.StringIO(text))
-    if reader.fieldnames is None:
-        return RedirectResponse(url=f"/entries?month={month}&err=CSVのヘッダーが読み取れません。", status_code=303)
+    invalid_files = [f.filename or "(ファイル名なし)" for f in files if not (f.filename or "").lower().endswith(".csv")]
+    if invalid_files:
+        names = ", ".join(invalid_files)
+        return RedirectResponse(
+            url=f"/entries?month={month}&section={current_section}&err=CSV以外のファイルがあります: {names}",
+            status_code=303,
+        )
 
-    # header variants
-    def pick(row: dict[str, str], *keys: str) -> str | None:
-        for k in keys:
-            if k in row and row[k] is not None and str(row[k]).strip() != "":
-                return str(row[k])
-        return None
+    daily_totals: dict[date, dict[str, Decimal]] = {}
+    daily_presence: dict[date, dict[str, bool]] = {}
+    row_errors = 0
+    file_errors = 0
 
-    fieldnames = set(reader.fieldnames)
-    has_card = any(k in fieldnames for k in ("カード決済", "card_payment", "カード", "Card"))
-    has_qr = any(k in fieldnames for k in ("QR決済", "qr_payment", "QR", "Qr"))
-    has_points = any(k in fieldnames for k in ("利用ポイント", "ポイント", "used_points", "points", "Points"))
+    for file in files:
+        raw = await file.read()
+        text = _decode_csv_bytes(raw)
+        reader = csv.DictReader(io.StringIO(text))
+        if reader.fieldnames is None:
+            file_errors += 1
+            continue
 
-    updated = 0
-    skipped = 0
-    errors = 0
-    for r in reader:
-        try:
-            d_raw = pick(r, "発生日", "日付", "date", "Date")
-            if not d_raw:
-                errors += 1
+        rows = list(reader)
+        fieldnames = [f or "" for f in reader.fieldnames]
+        fieldname_set = set(fieldnames)
+
+        has_card = _has_any_csv_header(fieldname_set, _CSV_CARD_KEYS)
+        has_qr = _has_any_csv_header(fieldname_set, _CSV_QR_KEYS)
+        has_points = _has_any_csv_header(fieldname_set, _CSV_POINTS_KEYS)
+        has_gift = _has_any_csv_header(fieldname_set, _CSV_GIFT_KEYS)
+        has_amount = _has_any_csv_header(fieldname_set, _CSV_AMOUNT_KEYS)
+        is_statement = False
+        amount_target: str | None = None
+        if not (has_card or has_qr):
+            is_statement = _looks_like_statement_csv(fieldnames, rows)
+            if has_amount or is_statement:
+                amount_target = _infer_amount_target(file.filename)
+
+        if not (has_card or has_qr or has_points or has_gift or has_amount or is_statement):
+            file_errors += 1
+            continue
+
+        for r in rows:
+            try:
+                d_raw = _pick_csv_value(r, _CSV_DATE_KEYS)
+                if not d_raw and (has_amount or is_statement):
+                    d_raw = _csv_value_by_index(r, fieldnames, 1)
+                if not d_raw:
+                    raise ValueError("日付が空です。")
+                dt = _parse_date_like(d_raw)
+                bucket = daily_totals.setdefault(dt, _new_daily_payment_bucket())
+                presence = daily_presence.setdefault(dt, _new_daily_presence_bucket())
+
+                if has_card:
+                    bucket["card"] += _parse_money_like(_pick_csv_value(r, _CSV_CARD_KEYS))
+                    presence["card"] = True
+                if has_qr:
+                    bucket["qr"] += _parse_money_like(_pick_csv_value(r, _CSV_QR_KEYS))
+                    presence["qr"] = True
+                if has_points:
+                    bucket["points"] += _parse_money_like(_pick_csv_value(r, _CSV_POINTS_KEYS))
+                    presence["points"] = True
+                if has_gift:
+                    # 利用ギフト券も「利用ポイント」と同じ扱いで合算する。
+                    bucket["points"] += _parse_money_like(_pick_csv_value(r, _CSV_GIFT_KEYS))
+                    presence["points"] = True
+
+                if amount_target is not None:
+                    amount_raw = _pick_csv_value(r, _CSV_AMOUNT_KEYS)
+                    if amount_raw is None and is_statement:
+                        amount_raw = _csv_value_by_index(r, fieldnames, 3)
+                    if amount_raw is not None:
+                        bucket[amount_target] += _parse_money_like(amount_raw)
+                        presence[amount_target] = True
+
+                    if is_statement and not has_points and not has_gift:
+                        points_raw = _csv_value_by_index(r, fieldnames, 4)
+                        gift_raw = _csv_value_by_index(r, fieldnames, 5)
+                        bucket["points"] += _parse_money_like(points_raw) + _parse_money_like(gift_raw)
+                        presence["points"] = True
+            except ValueError:
+                row_errors += 1
                 continue
-            dt = _parse_date_like(d_raw)
-            card = _parse_money_like(pick(r, "カード決済", "card_payment", "カード", "Card")) if has_card else None
-            qr = _parse_money_like(pick(r, "QR決済", "qr_payment", "QR", "Qr")) if has_qr else None
-            points = _parse_money_like(pick(r, "利用ポイント", "ポイント", "used_points", "points", "Points")) if has_points else None
-        except ValueError:
-            errors += 1
-            continue
 
+    if not daily_totals:
+        total_errors = row_errors + file_errors
+        if total_errors > 0:
+            return RedirectResponse(
+                url=f"/entries?month={month}&section={current_section}&err=有効なCSVデータがありません。エラー{total_errors}件",
+                status_code=303,
+            )
+        return RedirectResponse(
+            url=f"/entries?month={month}&section={current_section}&err=CSVに取り込み対象データがありません。",
+            status_code=303,
+        )
+
+    auto_note = "CSV取込で自動作成（売上は決済合計）"
+    updated = 0
+    created = 0
+    skipped = 0
+    adjusted_sales = 0
+
+    for dt in sorted(daily_totals.keys()):
+        totals = daily_totals[dt]
+        presence = daily_presence.get(dt, _new_daily_presence_bucket())
         row = db.execute(select(SalesDaily).where(SalesDaily.happened_on == dt)).scalar_one_or_none()
-        if not row:
-            skipped += 1
+        card_total = totals["card"] if presence["card"] else Decimal("0")
+        qr_total = totals["qr"] if presence["qr"] else Decimal("0")
+        points_total = totals["points"] if presence["points"] else Decimal("0")
+
+        if row is None:
+            payments_total = card_total + qr_total + points_total
+            row = SalesDaily(
+                happened_on=dt,
+                sales=payments_total,
+                customers=0,
+                unit_price=None,
+                outsourcing_cost=Decimal("0"),
+                used_points=points_total,
+                card_payment=card_total,
+                qr_payment=qr_total,
+                note=auto_note,
+            )
+            row.store_sales = row.computed_store_sales
+            row.cash_payment = row.computed_cash_payment
+            db.add(row)
+            created += 1
             continue
 
-        if card is not None:
-            row.card_payment = card
-        if qr is not None:
-            row.qr_payment = qr
-        if points is not None:
-            row.used_points = points
-        # recompute derived fields
+        new_card = card_total if presence["card"] else _as_money(row.card_payment)
+        new_qr = qr_total if presence["qr"] else _as_money(row.qr_payment)
+        new_points = points_total if presence["points"] else _as_money(row.used_points)
+        payments_total = new_card + new_qr + new_points
+        current_sales = _as_money(row.sales)
+
+        if current_sales < payments_total:
+            # 自動作成に近い行のみ売上を補正し、それ以外は不整合としてスキップする。
+            can_adjust_sales = (
+                int(row.customers or 0) == 0
+                and _as_money(row.outsourcing_cost) == Decimal("0")
+                and ((row.note or "").strip() in ("", auto_note))
+            )
+            if can_adjust_sales:
+                row.sales = payments_total
+                row.unit_price = None
+                if not (row.note or "").strip():
+                    row.note = auto_note
+                adjusted_sales += 1
+            else:
+                skipped += 1
+                continue
+
+        row.card_payment = new_card
+        row.qr_payment = new_qr
+        row.used_points = new_points
         row.cash_payment = row.computed_cash_payment
         row.store_sales = row.computed_store_sales
         updated += 1
 
     db.commit()
-    if errors:
-        return RedirectResponse(url=f"/entries?month={month}&msg=取り込み: 更新{updated}件 / スキップ{skipped}件 / エラー{errors}件", status_code=303)
-    return RedirectResponse(url=f"/entries?month={month}&msg=取り込み: 更新{updated}件 / スキップ{skipped}件", status_code=303)
+    parts = [f"取り込み(日次集計): 更新{updated}件", f"新規{created}件"]
+    if adjusted_sales:
+        parts.append(f"売上補正{adjusted_sales}件")
+    if skipped:
+        parts.append(f"スキップ{skipped}件")
+    total_errors = row_errors + file_errors
+    if total_errors:
+        parts.append(f"エラー{total_errors}件")
+    msg = " / ".join(parts)
+    return RedirectResponse(url=f"/entries?month={month}&section={current_section}&msg={msg}", status_code=303)
 
