@@ -87,14 +87,14 @@
       <input type="hidden" name="month" value="{{ month }}" />
       <div class="grid">
         <label class="grid__full">
-          CSVファイル（複数選択可 / 標準列「発生日」「カード決済」「QR決済」「利用ポイント」または振込・請求明細CSV）
+          CSVファイル（複数選択可 / 標準列「発生日」「カード決済」「QR決済」「利用ポイント」「利用ギフト券」または振込・請求明細CSV）
           <input type="file" name="files" accept=".csv,text/csv" multiple required />
         </label>
       </div>
       <div class="form__actions">
         <button type="submit">取り込み</button>
       </div>
-      <p class="hint">複数CSVを日付ごとに合算して登録します。既存日付は上書き、未登録日付は新規作成（売上は決済合計で初期化）します。振込・請求明細CSVの金額は通常カードとして扱い、ファイル名に「QR」を含む場合はQRとして扱います。</p>
+      <p class="hint">複数CSVを日付ごとに合算して登録します。利用ポイントと利用ギフト券は来店日時ごとに合算して利用ポイントとして反映します。既存日付は上書き、未登録日付は新規作成（売上は決済合計で初期化）します。振込・請求明細CSVの金額は通常カードとして扱い、ファイル名に「QR」を含む場合はQRとして扱います。</p>
     </form>
   </section>
 

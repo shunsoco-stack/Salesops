@@ -208,6 +208,7 @@ _CSV_DATE_KEYS = ("発生日", "日付", "date", "Date", "決済日時", "決済
 _CSV_CARD_KEYS = ("カード決済", "card_payment", "カード", "Card")
 _CSV_QR_KEYS = ("QR決済", "qr_payment", "QR", "Qr")
 _CSV_POINTS_KEYS = ("利用ポイント", "ポイント", "used_points", "points", "Points")
+_CSV_GIFT_KEYS = ("利用ギフト券", "ギフト券", "gift", "used_gift")
 _CSV_AMOUNT_KEYS = ("決済金額", "決済金額(税込)", "決済金額（税抜）", "請求金額", "支払金額", "取引金額")
 
 
@@ -710,6 +711,7 @@ async def import_payments(month: str = Form(...), files: list[UploadFile] = File
         has_card = _has_any_csv_header(fieldname_set, _CSV_CARD_KEYS)
         has_qr = _has_any_csv_header(fieldname_set, _CSV_QR_KEYS)
         has_points = _has_any_csv_header(fieldname_set, _CSV_POINTS_KEYS)
+        has_gift = _has_any_csv_header(fieldname_set, _CSV_GIFT_KEYS)
         has_amount = _has_any_csv_header(fieldname_set, _CSV_AMOUNT_KEYS)
         is_statement = False
         amount_target: str | None = None
@@ -718,7 +720,7 @@ async def import_payments(month: str = Form(...), files: list[UploadFile] = File
             if has_amount or is_statement:
                 amount_target = _infer_amount_target(file.filename)
 
-        if not (has_card or has_qr or has_points or has_amount or is_statement):
+        if not (has_card or has_qr or has_points or has_gift or has_amount or is_statement):
             file_errors += 1
             continue
 
@@ -742,6 +744,10 @@ async def import_payments(month: str = Form(...), files: list[UploadFile] = File
                 if has_points:
                     bucket["points"] += _parse_money_like(_pick_csv_value(r, _CSV_POINTS_KEYS))
                     presence["points"] = True
+                if has_gift:
+                    # 利用ギフト券も「利用ポイント」と同じ扱いで合算する。
+                    bucket["points"] += _parse_money_like(_pick_csv_value(r, _CSV_GIFT_KEYS))
+                    presence["points"] = True
 
                 if amount_target is not None:
                     amount_raw = _pick_csv_value(r, _CSV_AMOUNT_KEYS)
@@ -751,9 +757,10 @@ async def import_payments(month: str = Form(...), files: list[UploadFile] = File
                         bucket[amount_target] += _parse_money_like(amount_raw)
                         presence[amount_target] = True
 
-                    if is_statement and not has_points:
+                    if is_statement and not has_points and not has_gift:
                         points_raw = _csv_value_by_index(r, fieldnames, 4)
-                        bucket["points"] += _parse_money_like(points_raw)
+                        gift_raw = _csv_value_by_index(r, fieldnames, 5)
+                        bucket["points"] += _parse_money_like(points_raw) + _parse_money_like(gift_raw)
                         presence["points"] = True
             except ValueError:
                 row_errors += 1
