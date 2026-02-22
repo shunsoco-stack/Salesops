@@ -287,7 +287,7 @@ def root(request: Request) -> HTMLResponse:
     ctx = {
         "request": request,
         "month": month,
-        "title": "トップ - 売上・客数管理",
+        "title": "ダッシュボード",
     }
     return templates.TemplateResponse("top.html", ctx)
 
@@ -388,6 +388,7 @@ def entries(
     ctx = {
         "request": request,
         "month": month_start.strftime("%Y-%m"),
+        "title": f"{month_start.strftime('%Y-%m')} 売上入力・一覧",
         "rows": rows,
         "msg": msg,
         "err": err,
@@ -537,6 +538,7 @@ def edit_entry(entry_id: int, request: Request, month: str | None = None, err: s
     ctx = {
         "request": request,
         "month": month_start.strftime("%Y-%m"),
+        "title": "売上データ編集",
         "row": row,
         "outsourcing_breakdown": _format_outsourcing_amounts(row.outsourcing_payments or []),
         "err": err,
