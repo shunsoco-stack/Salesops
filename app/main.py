@@ -194,6 +194,27 @@ def _parse_day(day: str | None) -> date:
         return date.today()
 
 
+_ENTRY_SECTIONS = {
+    "dashboard",
+    "daily-input",
+    "csv-import",
+    "sales",
+    "reports",
+    "analytics",
+    "settings",
+    "export",
+}
+
+
+def _parse_entry_section(section: str | None) -> str:
+    if not section:
+        return "dashboard"
+    s = section.strip()
+    if s in _ENTRY_SECTIONS:
+        return s
+    return "dashboard"
+
+
 def _decode_csv_bytes(data: bytes) -> str:
     for enc in ("utf-8-sig", "cp932", "utf-8"):
         try:
@@ -288,6 +309,7 @@ def root(request: Request) -> HTMLResponse:
         "request": request,
         "month": month,
         "title": "ダッシュボード",
+        "current_section": "home",
     }
     return templates.TemplateResponse("top.html", ctx)
 
@@ -297,6 +319,7 @@ def entries(
     request: Request,
     month: str | None = None,
     day: str | None = None,
+    section: str | None = None,
     msg: str | None = None,
     err: str | None = None,
     db: Session = Depends(get_db),
@@ -305,6 +328,7 @@ def entries(
     start, end = _month_range(month_start)
     dim = _days_in_month(month_start)
     selected_day = _parse_day(day)
+    current_section = _parse_entry_section(section)
 
     rows = (
         db.execute(
@@ -384,11 +408,40 @@ def entries(
     yearly_total_cash = sum((buckets[m]["cash"] for m in range(1, 13)), Decimal("0"))
     yearly_total_card = sum((buckets[m]["card"] for m in range(1, 13)), Decimal("0"))
     yearly_total_qr = sum((buckets[m]["qr"] for m in range(1, 13)), Decimal("0"))
+    max_monthly_sales = max((buckets[m]["sales"] for m in range(1, 13)), default=Decimal("0"))
+    analytics_months: list[dict[str, Any]] = []
+    for m in range(1, 13):
+        sales_m = buckets[m]["sales"]
+        ratio = 0
+        if max_monthly_sales > 0:
+            ratio = int(((sales_m / max_monthly_sales) * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        analytics_months.append(
+            {
+                "month": m,
+                "sales": sales_m,
+                "customers": buckets[m]["customers"],
+                "sales_ratio": ratio,
+                "card": buckets[m]["card"],
+                "qr": buckets[m]["qr"],
+                "points": buckets[m]["points"],
+            }
+        )
+
+    section_title_map = {
+        "dashboard": f"{month_start.strftime('%Y-%m')} ダッシュボード",
+        "daily-input": "売上入力",
+        "csv-import": "CSV取込",
+        "sales": "売上一覧",
+        "reports": "レポート",
+        "analytics": "分析",
+        "settings": "設定",
+        "export": "エクスポート",
+    }
 
     ctx = {
         "request": request,
         "month": month_start.strftime("%Y-%m"),
-        "title": f"{month_start.strftime('%Y-%m')} 売上入力・一覧",
+        "title": section_title_map.get(current_section, f"{month_start.strftime('%Y-%m')} 売上入力・一覧"),
         "rows": rows,
         "msg": msg,
         "err": err,
@@ -419,6 +472,8 @@ def entries(
             "total_qr": yearly_total_qr,
         },
         "yearly_months": [buckets[m] for m in range(1, 13)],
+        "analytics_months": analytics_months,
+        "current_section": current_section,
         "selected_day": selected_day.isoformat(),
     }
     return templates.TemplateResponse("entries.html", ctx)
@@ -428,6 +483,7 @@ def entries(
 def create_or_update_entry(
     request: Request,
     month: str = Form(...),
+    section: str = Form("daily-input"),
     happened_on: str = Form(...),
     sales: str = Form("0"),
     customers: str = Form("0"),
@@ -439,10 +495,11 @@ def create_or_update_entry(
     note: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    current_section = _parse_entry_section(section)
     try:
         dt = datetime.strptime(happened_on, "%Y-%m-%d").date()
     except ValueError:
-        return RedirectResponse(url=f"/entries?month={month}&err=入力値が不正です。", status_code=303)
+        return RedirectResponse(url=f"/entries?month={month}&section={current_section}&err=入力値が不正です。", status_code=303)
 
     try:
         sales_d = _d(sales) or Decimal("0")
@@ -452,7 +509,10 @@ def create_or_update_entry(
         card_d = _d(card_payment) or Decimal("0")
         qr_d = _d(qr_payment) or Decimal("0")
     except (ValueError, InvalidOperation):
-        return RedirectResponse(url=f"/entries?month={month}&day={dt.isoformat()}&err=入力値が不正です。", status_code=303)
+        return RedirectResponse(
+            url=f"/entries?month={month}&section={current_section}&day={dt.isoformat()}&err=入力値が不正です。",
+            status_code=303,
+        )
 
     breakdown_items: list[Decimal] | None
     if outsourcing_breakdown.strip() == "":
@@ -461,14 +521,17 @@ def create_or_update_entry(
         try:
             breakdown_items = _parse_outsourcing_amounts(outsourcing_breakdown)
         except ValueError as e:
-            return RedirectResponse(url=f"/entries?month={month}&day={dt.isoformat()}&err={str(e)}", status_code=303)
+            return RedirectResponse(
+                url=f"/entries?month={month}&section={current_section}&day={dt.isoformat()}&err={str(e)}",
+                status_code=303,
+            )
 
     unit_price_d = _calc_unit_price(sales_d, customers_i)
     note_v = note.strip() or None
     computed_cash = sales_d - points_d - card_d - qr_d
     if computed_cash < 0:
         return RedirectResponse(
-            url=f"/entries?month={month}&day={dt.isoformat()}&err=カード+QR+ポイントが売上を超えています。",
+            url=f"/entries?month={month}&section={current_section}&day={dt.isoformat()}&err=カード+QR+ポイントが売上を超えています。",
             status_code=303,
         )
 
@@ -520,11 +583,19 @@ def create_or_update_entry(
         msg = "保存しました。"
 
     db.commit()
-    return RedirectResponse(url=f"/entries?month={month}&day={dt.isoformat()}&msg={msg}", status_code=303)
+    return RedirectResponse(url=f"/entries?month={month}&section={current_section}&day={dt.isoformat()}&msg={msg}", status_code=303)
 
 
 @app.get("/entries/{entry_id}/edit", response_class=HTMLResponse)
-def edit_entry(entry_id: int, request: Request, month: str | None = None, err: str | None = None, db: Session = Depends(get_db)) -> HTMLResponse:
+def edit_entry(
+    entry_id: int,
+    request: Request,
+    month: str | None = None,
+    section: str | None = None,
+    err: str | None = None,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    current_section = _parse_entry_section(section or "sales")
     row = (
         db.execute(select(SalesDaily).options(selectinload(SalesDaily.outsourcing_payments)).where(SalesDaily.id == entry_id))
         .scalars()
@@ -532,13 +603,15 @@ def edit_entry(entry_id: int, request: Request, month: str | None = None, err: s
     )
     if not row:
         m = _parse_month(month).strftime("%Y-%m")
-        return RedirectResponse(url=f"/entries?month={m}&err=対象データが見つかりません。", status_code=303)
+        return RedirectResponse(url=f"/entries?month={m}&section={current_section}&err=対象データが見つかりません。", status_code=303)
 
     month_start = _parse_month(month) if month else date(row.happened_on.year, row.happened_on.month, 1)
     ctx = {
         "request": request,
         "month": month_start.strftime("%Y-%m"),
         "title": "売上データ編集",
+        "current_section": current_section,
+        "section": current_section,
         "row": row,
         "outsourcing_breakdown": _format_outsourcing_amounts(row.outsourcing_payments or []),
         "err": err,
@@ -550,6 +623,7 @@ def edit_entry(entry_id: int, request: Request, month: str | None = None, err: s
 def update_entry(
     entry_id: int,
     month: str = Form(...),
+    section: str = Form("sales"),
     happened_on: str = Form(...),
     sales: str = Form("0"),
     customers: str = Form("0"),
@@ -561,9 +635,10 @@ def update_entry(
     note: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    current_section = _parse_entry_section(section)
     row = db.get(SalesDaily, entry_id)
     if not row:
-        return RedirectResponse(url=f"/entries?month={month}&err=対象データが見つかりません。", status_code=303)
+        return RedirectResponse(url=f"/entries?month={month}&section={current_section}&err=対象データが見つかりません。", status_code=303)
 
     try:
         dt = datetime.strptime(happened_on, "%Y-%m-%d").date()
@@ -574,7 +649,10 @@ def update_entry(
         card_d = _d(card_payment) or Decimal("0")
         qr_d = _d(qr_payment) or Decimal("0")
     except (ValueError, InvalidOperation):
-        return RedirectResponse(url=f"/entries/{entry_id}/edit?month={month}&err=入力値が不正です。", status_code=303)
+        return RedirectResponse(
+            url=f"/entries/{entry_id}/edit?month={month}&section={current_section}&err=入力値が不正です。",
+            status_code=303,
+        )
 
     if outsourcing_breakdown.strip() == "":
         breakdown_items = []  # allow clearing breakdown
@@ -582,18 +660,27 @@ def update_entry(
         try:
             breakdown_items = _parse_outsourcing_amounts(outsourcing_breakdown)
         except ValueError as e:
-            return RedirectResponse(url=f"/entries/{entry_id}/edit?month={month}&err={str(e)}", status_code=303)
+            return RedirectResponse(
+                url=f"/entries/{entry_id}/edit?month={month}&section={current_section}&err={str(e)}",
+                status_code=303,
+            )
 
     computed_cash = sales_d - points_d - card_d - qr_d
     if computed_cash < 0:
-        return RedirectResponse(url=f"/entries/{entry_id}/edit?month={month}&err=カード+QR+ポイントが売上を超えています。", status_code=303)
+        return RedirectResponse(
+            url=f"/entries/{entry_id}/edit?month={month}&section={current_section}&err=カード+QR+ポイントが売上を超えています。",
+            status_code=303,
+        )
     unit_price_d = _calc_unit_price(sales_d, customers_i)
     note_v = note.strip() or None
 
     # If happened_on changes, enforce uniqueness by date.
     other = db.execute(select(SalesDaily).where(SalesDaily.happened_on == dt, SalesDaily.id != entry_id)).scalar_one_or_none()
     if other:
-        return RedirectResponse(url=f"/entries/{entry_id}/edit?month={month}&err=同じ発生日のデータが既に存在します。", status_code=303)
+        return RedirectResponse(
+            url=f"/entries/{entry_id}/edit?month={month}&section={current_section}&err=同じ発生日のデータが既に存在します。",
+            status_code=303,
+        )
 
     row.happened_on = dt
     row.sales = sales_d
@@ -613,17 +700,18 @@ def update_entry(
     row.cash_payment = row.computed_cash_payment
     db.commit()
 
-    return RedirectResponse(url=f"/entries?month={month}&msg=更新しました。", status_code=303)
+    return RedirectResponse(url=f"/entries?month={month}&section={current_section}&msg=更新しました。", status_code=303)
 
 
 @app.post("/entries/{entry_id}/delete")
-def delete_entry(entry_id: int, month: str = Form(...), db: Session = Depends(get_db)):
+def delete_entry(entry_id: int, month: str = Form(...), section: str = Form("sales"), db: Session = Depends(get_db)):
+    current_section = _parse_entry_section(section)
     row = db.get(SalesDaily, entry_id)
     if row:
         db.execute(delete(OutsourcingPayment).where(OutsourcingPayment.sales_daily_id == row.id))
         db.delete(row)
         db.commit()
-    return RedirectResponse(url=f"/entries?month={month}&msg=削除しました。", status_code=303)
+    return RedirectResponse(url=f"/entries?month={month}&section={current_section}&msg=削除しました。", status_code=303)
 
 
 @app.get("/export.csv")
@@ -684,14 +772,23 @@ def export_csv(month: str | None = None, db: Session = Depends(get_db)):
 
 
 @app.post("/import-payments")
-async def import_payments(month: str = Form(...), files: list[UploadFile] = File(...), db: Session = Depends(get_db)):
+async def import_payments(
+    month: str = Form(...),
+    section: str = Form("csv-import"),
+    files: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+):
+    current_section = _parse_entry_section(section)
     if not files:
-        return RedirectResponse(url=f"/entries?month={month}&err=CSVファイルを選んでください。", status_code=303)
+        return RedirectResponse(url=f"/entries?month={month}&section={current_section}&err=CSVファイルを選んでください。", status_code=303)
 
     invalid_files = [f.filename or "(ファイル名なし)" for f in files if not (f.filename or "").lower().endswith(".csv")]
     if invalid_files:
         names = ", ".join(invalid_files)
-        return RedirectResponse(url=f"/entries?month={month}&err=CSV以外のファイルがあります: {names}", status_code=303)
+        return RedirectResponse(
+            url=f"/entries?month={month}&section={current_section}&err=CSV以外のファイルがあります: {names}",
+            status_code=303,
+        )
 
     daily_totals: dict[date, dict[str, Decimal]] = {}
     daily_presence: dict[date, dict[str, bool]] = {}
@@ -771,8 +868,14 @@ async def import_payments(month: str = Form(...), files: list[UploadFile] = File
     if not daily_totals:
         total_errors = row_errors + file_errors
         if total_errors > 0:
-            return RedirectResponse(url=f"/entries?month={month}&err=有効なCSVデータがありません。エラー{total_errors}件", status_code=303)
-        return RedirectResponse(url=f"/entries?month={month}&err=CSVに取り込み対象データがありません。", status_code=303)
+            return RedirectResponse(
+                url=f"/entries?month={month}&section={current_section}&err=有効なCSVデータがありません。エラー{total_errors}件",
+                status_code=303,
+            )
+        return RedirectResponse(
+            url=f"/entries?month={month}&section={current_section}&err=CSVに取り込み対象データがありません。",
+            status_code=303,
+        )
 
     auto_note = "CSV取込で自動作成（売上は決済合計）"
     updated = 0
@@ -847,5 +950,5 @@ async def import_payments(month: str = Form(...), files: list[UploadFile] = File
     if total_errors:
         parts.append(f"エラー{total_errors}件")
     msg = " / ".join(parts)
-    return RedirectResponse(url=f"/entries?month={month}&msg={msg}", status_code=303)
+    return RedirectResponse(url=f"/entries?month={month}&section={current_section}&msg={msg}", status_code=303)
 

@@ -12,6 +12,7 @@
   <body>
     <div class="app-layout">
       <aside class="sidebar">
+        {% set sec = current_section or "" %}
         <div class="sidebar__brand">
           <div class="sidebar__logo"><i class="ri-line-chart-line"></i></div>
           <div class="sidebar__title">売上管理システム</div>
@@ -19,15 +20,39 @@
         <nav class="sidebar__nav">
           <a class="sidebar__item {% if request.url.path == '/' %}is-active{% endif %}" href="/">
             <i class="ri-dashboard-line"></i>
+            <span>トップ</span>
+          </a>
+          <a class="sidebar__item {% if sec == 'dashboard' %}is-active{% endif %}" href="/entries?month={{ month or '' }}&section=dashboard">
+            <i class="ri-dashboard-3-line"></i>
             <span>ダッシュボード</span>
           </a>
-          <a class="sidebar__item {% if request.url.path.startswith('/entries') %}is-active{% endif %}" href="/entries?month={{ month or '' }}">
+          <a class="sidebar__item {% if sec == 'daily-input' %}is-active{% endif %}" href="/entries?month={{ month or '' }}&section=daily-input">
             <i class="ri-pencil-line"></i>
-            <span>売上入力・一覧</span>
+            <span>売上入力</span>
           </a>
-          <a class="sidebar__item" href="/export.csv?month={{ month or '' }}">
+          <a class="sidebar__item {% if sec == 'csv-import' %}is-active{% endif %}" href="/entries?month={{ month or '' }}&section=csv-import">
+            <i class="ri-file-upload-line"></i>
+            <span>CSV取込</span>
+          </a>
+          <a class="sidebar__item {% if sec == 'sales' %}is-active{% endif %}" href="/entries?month={{ month or '' }}&section=sales">
+            <i class="ri-file-list-3-line"></i>
+            <span>売上一覧</span>
+          </a>
+          <a class="sidebar__item {% if sec == 'reports' %}is-active{% endif %}" href="/entries?month={{ month or '' }}&section=reports">
+            <i class="ri-file-chart-line"></i>
+            <span>レポート</span>
+          </a>
+          <a class="sidebar__item {% if sec == 'analytics' %}is-active{% endif %}" href="/entries?month={{ month or '' }}&section=analytics">
+            <i class="ri-bar-chart-box-line"></i>
+            <span>分析</span>
+          </a>
+          <a class="sidebar__item {% if sec == 'settings' %}is-active{% endif %}" href="/entries?month={{ month or '' }}&section=settings">
+            <i class="ri-settings-3-line"></i>
+            <span>設定</span>
+          </a>
+          <a class="sidebar__item {% if sec == 'export' %}is-active{% endif %}" href="/entries?month={{ month or '' }}&section=export">
             <i class="ri-download-2-line"></i>
-            <span>CSV出力</span>
+            <span>エクスポート</span>
           </a>
         </nav>
       </aside>
@@ -40,6 +65,9 @@
           </div>
           <div class="topbar__right">
             <form action="/entries" method="get" class="month-picker">
+              {% if sec and sec != 'home' %}
+              <input type="hidden" name="section" value="{{ sec }}" />
+              {% endif %}
               <label>
                 対象月
                 <input type="month" name="month" value="{{ month or '' }}" />

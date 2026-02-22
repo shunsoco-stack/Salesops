@@ -1,10 +1,28 @@
 {% extends "base.html" %}
 {% block content %}
+  {% set section = current_section or "dashboard" %}
+
+  <section class="card">
+    <h2>機能メニュー</h2>
+    <div class="section-nav">
+      <a class="section-chip {% if section == 'dashboard' %}is-active{% endif %}" href="/entries?month={{ month }}&section=dashboard"><i class="ri-dashboard-3-line"></i> ダッシュボード</a>
+      <a class="section-chip {% if section == 'daily-input' %}is-active{% endif %}" href="/entries?month={{ month }}&section=daily-input"><i class="ri-pencil-line"></i> 売上入力</a>
+      <a class="section-chip {% if section == 'csv-import' %}is-active{% endif %}" href="/entries?month={{ month }}&section=csv-import"><i class="ri-file-upload-line"></i> CSV取込</a>
+      <a class="section-chip {% if section == 'sales' %}is-active{% endif %}" href="/entries?month={{ month }}&section=sales"><i class="ri-file-list-3-line"></i> 売上一覧</a>
+      <a class="section-chip {% if section == 'reports' %}is-active{% endif %}" href="/entries?month={{ month }}&section=reports"><i class="ri-file-chart-line"></i> レポート</a>
+      <a class="section-chip {% if section == 'analytics' %}is-active{% endif %}" href="/entries?month={{ month }}&section=analytics"><i class="ri-bar-chart-box-line"></i> 分析</a>
+      <a class="section-chip {% if section == 'settings' %}is-active{% endif %}" href="/entries?month={{ month }}&section=settings"><i class="ri-settings-3-line"></i> 設定</a>
+      <a class="section-chip {% if section == 'export' %}is-active{% endif %}" href="/entries?month={{ month }}&section=export"><i class="ri-download-2-line"></i> エクスポート</a>
+    </div>
+    <p class="hint">ReddyAIの操作導線に合わせて、機能をセクション別に利用できます。</p>
+  </section>
+
+  {% if section in ['dashboard', 'daily-input'] %}
   <section class="card">
     <h2>入力</h2>
     <form action="/entries" method="post" class="form">
       <input type="hidden" name="month" value="{{ month }}" />
-
+      <input type="hidden" name="section" value="daily-input" />
       <div class="grid">
         <label class="grid__full">
           発生日
@@ -14,77 +32,36 @@
             <button type="button" class="btn btn--tiny btn--secondary" data-day-shift="1">翌日</button>
           </div>
         </label>
-
-        <label>
-          売上
-          <input type="number" inputmode="decimal" step="0.01" name="sales" id="sales" value="" required />
-        </label>
-
-        <label>
-          客数
-          <input type="number" inputmode="numeric" step="1" min="0" name="customers" id="customers" value="" required />
-        </label>
-
-        <label>
-          客単価（自動）
-          <input type="text" id="unit_price" value="" readonly />
-        </label>
-
-        <label>
-          外注費（合計）
-          <input type="number" inputmode="decimal" step="0.01" name="outsourcing_cost" id="outsourcing_cost" value="" />
-        </label>
-
+        <label>売上<input type="number" inputmode="decimal" step="0.01" name="sales" id="sales" value="" required /></label>
+        <label>客数<input type="number" inputmode="numeric" step="1" min="0" name="customers" id="customers" value="" required /></label>
+        <label>客単価（自動）<input type="text" id="unit_price" value="" readonly /></label>
+        <label>外注費（合計）<input type="number" inputmode="decimal" step="0.01" name="outsourcing_cost" id="outsourcing_cost" value="" /></label>
         <label class="grid__full">
           外注費内訳（金額だけ / + や改行で複数OK）
           <textarea name="outsourcing_breakdown" id="outsourcing_breakdown" rows="2" placeholder="例: 10000+5000+5000&#10;例: 10000&#10;5000&#10;5000"></textarea>
         </label>
-
-        <label>
-          利用ポイント
-          <input type="number" inputmode="decimal" step="0.01" name="used_points" id="used_points" value="" />
-        </label>
-
-        <label>
-          店舗売上（自動：売上-外注費）
-          <input type="text" id="store_sales" value="" readonly />
-        </label>
-
-        <label>
-          カード決済
-          <input type="number" inputmode="decimal" step="0.01" name="card_payment" id="card_payment" value="" />
-        </label>
-
-        <label>
-          QR決済
-          <input type="number" inputmode="decimal" step="0.01" name="qr_payment" id="qr_payment" value="" />
-        </label>
-
-        <label>
-          現金決済（自動）
-          <input type="text" id="cash_payment" value="" readonly />
-        </label>
-
-        <label class="grid__full">
-          備考
-          <textarea name="note" rows="2"></textarea>
-        </label>
+        <label>利用ポイント<input type="number" inputmode="decimal" step="0.01" name="used_points" id="used_points" value="" /></label>
+        <label>店舗売上（自動：売上-外注費）<input type="text" id="store_sales" value="" readonly /></label>
+        <label>カード決済<input type="number" inputmode="decimal" step="0.01" name="card_payment" id="card_payment" value="" /></label>
+        <label>QR決済<input type="number" inputmode="decimal" step="0.01" name="qr_payment" id="qr_payment" value="" /></label>
+        <label>現金決済（自動）<input type="text" id="cash_payment" value="" readonly /></label>
+        <label class="grid__full">備考<textarea name="note" rows="2"></textarea></label>
       </div>
-
       <div class="form__actions">
         <button type="submit">保存</button>
         <a class="btn btn--secondary" href="/export.csv?month={{ month }}">CSV出力</a>
       </div>
-      <p class="hint">
-        同じ発生日がある場合は上書き更新します。外注費内訳を入れると合計が自動計算されます。
-      </p>
+      <p class="hint">同じ発生日がある場合は上書き更新します。外注費内訳を入れると合計が自動計算されます。</p>
     </form>
   </section>
+  {% endif %}
 
+  {% if section in ['dashboard', 'csv-import'] %}
   <section class="card">
-    <h2>カード/QR/利用ポイントをCSVから日次集計で取り込み</h2>
+    <h2>CSV取込</h2>
     <form action="/import-payments" method="post" enctype="multipart/form-data" class="form">
       <input type="hidden" name="month" value="{{ month }}" />
+      <input type="hidden" name="section" value="csv-import" />
       <div class="grid">
         <label class="grid__full">
           CSVファイル（複数選択可 / 標準列「発生日」「カード決済」「QR決済」「利用ポイント」「利用ギフト券」または振込・請求明細CSV）
@@ -94,10 +71,12 @@
       <div class="form__actions">
         <button type="submit">取り込み</button>
       </div>
-      <p class="hint">複数CSVを日付ごとに合算して登録します。利用ポイントと利用ギフト券は来店日時ごとに合算して利用ポイントとして反映します。既存日付は上書き、未登録日付は新規作成（売上は決済合計で初期化）します。振込・請求明細CSVの金額は通常カードとして扱い、ファイル名に「QR」を含む場合はQRとして扱います。</p>
+      <p class="hint">複数CSVを日付ごとに合算して登録します。利用ポイントと利用ギフト券は来店日時ごとに合算して利用ポイントとして反映します。既存日付は上書き、未登録日付は新規作成（売上は決済合計で初期化）します。</p>
     </form>
   </section>
+  {% endif %}
 
+  {% if section in ['dashboard', 'reports', 'analytics'] %}
   <section class="card">
     <h2>月次集計（{{ month }}）</h2>
     <div class="kpis">
@@ -114,9 +93,19 @@
       <div class="kpi"><div class="kpi__label">QR</div><div class="kpi__value">{{ summary.total_qr|yen }}</div></div>
     </div>
   </section>
+  {% endif %}
 
+  {% if section in ['dashboard', 'sales'] %}
   <section class="card">
-    <h2>一覧（{{ month }}）</h2>
+    <h2>売上一覧（{{ month }}）</h2>
+    {% if section == 'sales' %}
+    <div class="split-grid">
+      <label>
+        キーワード検索（日付/備考）
+        <input type="text" id="sales_search" placeholder="例: 2026-01-12 / メモの文字列" />
+      </label>
+    </div>
+    {% endif %}
     <div class="table-wrap">
       <table class="table">
         <thead>
@@ -136,23 +125,21 @@
             <th></th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="sales_rows">
           {% for r in rows %}
-          <tr>
+          {% set ns = namespace(outsourcing_text="") %}
+          {% if r.outsourcing_payments and (r.outsourcing_payments|length) > 0 %}
+            {% for p in r.outsourcing_payments %}
+              {% set ns.outsourcing_text = ns.outsourcing_text ~ (p.amount|yen) ~ ("+" if not loop.last else "") %}
+            {% endfor %}
+          {% endif %}
+          <tr data-sales-row data-search-text="{{ r.happened_on }} {{ r.note or '' }}">
             <td>{{ r.happened_on }}</td>
             <td class="num">{{ r.sales|yen }}</td>
             <td class="num">{{ r.customers }}</td>
             <td class="num">{{ r.unit_price|yen }}</td>
             <td class="num">{{ r.outsourcing_cost|yen }}</td>
-            {% set ns = namespace(outsourcing_text="") %}
-            {% if r.outsourcing_payments and (r.outsourcing_payments|length) > 0 %}
-              {% for p in r.outsourcing_payments %}
-                {% set ns.outsourcing_text = ns.outsourcing_text ~ (p.amount|yen) ~ ("+" if not loop.last else "") %}
-              {% endfor %}
-            {% endif %}
-            <td class="breakdown" title="{{ ns.outsourcing_text }}">
-              <span class="breakdown__text">{{ ns.outsourcing_text }}</span>
-            </td>
+            <td class="breakdown" title="{{ ns.outsourcing_text }}"><span class="breakdown__text">{{ ns.outsourcing_text }}</span></td>
             <td class="num">{{ r.used_points|yen }}</td>
             <td class="num">{{ r.computed_store_sales|yen }}</td>
             <td class="num">{{ r.computed_cash_payment|yen }}</td>
@@ -160,14 +147,16 @@
             <td class="num">{{ r.qr_payment|yen }}</td>
             <td class="note">{{ r.note or "" }}</td>
             <td class="actions">
-              <a class="btn btn--tiny" href="/entries/{{ r.id }}/edit?month={{ month }}">編集</a>
+              <a class="btn btn--tiny" href="/entries/{{ r.id }}/edit?month={{ month }}&section={{ section }}">編集</a>
               <form action="/entries/{{ r.id }}/delete" method="post" class="inline" onsubmit="return confirm('削除しますか？');">
                 <input type="hidden" name="month" value="{{ month }}" />
+                <input type="hidden" name="section" value="{{ section }}" />
                 <button class="btn btn--tiny btn--danger" type="submit">削除</button>
               </form>
             </td>
           </tr>
           {% endfor %}
+          <tr id="sales_no_result" style="display: none;"><td colspan="13" class="muted">条件に一致するデータがありません。</td></tr>
           {% if rows|length == 0 %}
           <tr><td colspan="13" class="muted">データがありません。</td></tr>
           {% endif %}
@@ -175,7 +164,9 @@
       </table>
     </div>
   </section>
+  {% endif %}
 
+  {% if section in ['dashboard', 'reports', 'analytics'] %}
   <section class="card">
     <h2>年次集計（{{ year }}年 1月〜12月）</h2>
     <div class="kpis">
@@ -223,5 +214,84 @@
       </table>
     </div>
   </section>
+  {% endif %}
+
+  {% if section == 'analytics' %}
+  <section class="card">
+    <h2>月次推移グラフ（簡易）</h2>
+    <div class="analytics-bars">
+      {% for m in analytics_months %}
+      <div class="bar-row">
+        <div class="bar-row__label">{{ m.month }}月</div>
+        <div class="bar">
+          <div class="bar__fill" style="width: {{ m.sales_ratio }}%;"></div>
+        </div>
+        <div class="bar-row__value">{{ m.sales|yen }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if section == 'export' %}
+  <section class="card">
+    <h2>エクスポート</h2>
+    <div class="split-grid">
+      <label>
+        形式
+        <select disabled>
+          <option>CSV（利用可能）</option>
+          <option>Excel（準備中）</option>
+          <option>PDF（準備中）</option>
+        </select>
+      </label>
+      <label>
+        対象月
+        <input type="month" value="{{ month }}" readonly />
+      </label>
+    </div>
+    <div class="form__actions">
+      <a class="btn" href="/export.csv?month={{ month }}">CSVをダウンロード</a>
+    </div>
+    <p class="hint">ReddyAI画面に合わせてエクスポート専用セクションを追加しました。現在はCSV出力に対応しています。</p>
+  </section>
+  {% endif %}
+
+  {% if section == 'settings' %}
+  <section class="card">
+    <h2>設定</h2>
+    <form id="ui_settings_form" class="form">
+      <div class="settings-grid">
+        <label>
+          会社名
+          <input type="text" id="ui_company_name" placeholder="会社名を入力" />
+        </label>
+        <label>
+          担当者名
+          <input type="text" id="ui_contact_name" placeholder="担当者名を入力" />
+        </label>
+        <label>
+          通知（メール）
+          <select id="ui_notify_email">
+            <option value="on">ON</option>
+            <option value="off">OFF</option>
+          </select>
+        </label>
+        <label>
+          通知（プッシュ）
+          <select id="ui_notify_push">
+            <option value="off">OFF</option>
+            <option value="on">ON</option>
+          </select>
+        </label>
+      </div>
+      <div class="form__actions">
+        <button type="submit">設定を保存</button>
+        <span id="ui_settings_msg" class="hint"></span>
+      </div>
+      <p class="hint">設定値はブラウザのローカルストレージに保存されます（サーバーDBへの保存は未対応）。</p>
+    </form>
+  </section>
+  {% endif %}
 {% endblock %}
 

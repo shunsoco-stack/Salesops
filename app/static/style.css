@@ -51,6 +51,7 @@ a {
   border-right: 1px solid var(--border);
   z-index: 60;
   padding: 16px 12px;
+  overflow-y: auto;
 }
 
 .sidebar__brand {
@@ -226,7 +227,8 @@ button,
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   padding: 10px 11px;
   border-radius: 10px;
@@ -237,7 +239,8 @@ textarea {
 }
 
 input:focus,
-textarea:focus {
+textarea:focus,
+select:focus {
   border-color: #2dd4bf;
   box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.18);
 }
@@ -280,6 +283,48 @@ textarea {
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 12px;
+}
+
+.section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.section-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  color: #374151;
+  padding: 8px 12px;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.section-chip:hover {
+  background: #f8fafc;
+}
+
+.section-chip.is-active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.split-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .hint {
@@ -429,6 +474,43 @@ button:hover,
   padding: 18px !important;
 }
 
+.analytics-bars {
+  display: grid;
+  gap: 10px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 60px 1fr 120px;
+  gap: 10px;
+  align-items: center;
+}
+
+.bar-row__label {
+  color: #475569;
+  font-size: 13px;
+}
+
+.bar {
+  height: 12px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.bar__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2dd4bf, #14b8a6);
+}
+
+.bar-row__value {
+  text-align: right;
+  font-size: 13px;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
 @media (max-width: 1080px) {
   :root {
     --sidebar-w: 82px;
@@ -455,6 +537,11 @@ button:hover,
 
   .kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .split-grid,
+  .settings-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -509,6 +596,10 @@ button:hover,
 
   .kpis {
     grid-template-columns: 1fr;
+  }
+
+  .bar-row {
+    grid-template-columns: 50px 1fr 90px;
   }
 
   .month-picker {

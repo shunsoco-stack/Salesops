@@ -85,6 +85,66 @@ function updateDerivedFields() {
   cashEl.value = formatMoney(sales - points - card - qr);
 }
 
+function setupSalesSearchFilter() {
+  const input = document.getElementById("sales_search");
+  const rows = Array.from(document.querySelectorAll("[data-sales-row]"));
+  const noResult = document.getElementById("sales_no_result");
+  if (!input || rows.length === 0) return;
+
+  const apply = () => {
+    const q = String(input.value || "").trim().toLowerCase();
+    let visible = 0;
+    rows.forEach((row) => {
+      const text = String(row.getAttribute("data-search-text") || "").toLowerCase();
+      const show = !q || text.includes(q);
+      row.style.display = show ? "" : "none";
+      if (show) visible += 1;
+    });
+    if (noResult) {
+      noResult.style.display = visible === 0 ? "" : "none";
+    }
+  };
+
+  input.addEventListener("input", apply);
+  apply();
+}
+
+function setupUiSettingsLocalStorage() {
+  const form = document.getElementById("ui_settings_form");
+  if (!form) return;
+  const fields = [
+    { id: "ui_company_name", key: "ui.company_name" },
+    { id: "ui_contact_name", key: "ui.contact_name" },
+    { id: "ui_notify_email", key: "ui.notify_email" },
+    { id: "ui_notify_push", key: "ui.notify_push" },
+  ];
+  const msg = document.getElementById("ui_settings_msg");
+
+  fields.forEach(({ id, key }) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const saved = window.localStorage.getItem(key);
+    if (saved !== null) {
+      el.value = saved;
+    }
+  });
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    fields.forEach(({ id, key }) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      window.localStorage.setItem(key, String(el.value || ""));
+    });
+    if (msg) {
+      msg.textContent = "設定を保存しました。";
+      window.setTimeout(() => {
+        msg.textContent = "";
+      }, 2500);
+    }
+  });
+}
+
 document.addEventListener("input", (e) => {
   const id = e.target && e.target.id;
   if (id === "sales" || id === "customers") {
@@ -111,5 +171,7 @@ document.addEventListener("DOMContentLoaded", () => {
   updateUnitPrice();
   updateOutsourcingCostFromBreakdown();
   updateDerivedFields();
+  setupSalesSearchFilter();
+  setupUiSettingsLocalStorage();
 });
 

@@ -4,6 +4,7 @@
     <h2>編集</h2>
     <form action="/entries/{{ row.id }}/edit" method="post" class="form">
       <input type="hidden" name="month" value="{{ month }}" />
+      <input type="hidden" name="section" value="{{ section or current_section or 'sales' }}" />
 
       <div class="grid">
         <label>
@@ -69,7 +70,7 @@
 
       <div class="form__actions">
         <button type="submit">更新</button>
-        <a class="btn btn--secondary" href="/entries?month={{ month }}">戻る</a>
+        <a class="btn btn--secondary" href="/entries?month={{ month }}&section={{ section or current_section or 'sales' }}">戻る</a>
       </div>
     </form>
   </section>
