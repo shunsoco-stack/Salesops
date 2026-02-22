@@ -183,6 +183,31 @@ def _decode_csv_bytes(data: bytes) -> str:
     return data.decode("utf-8", errors="replace")
 
 
+_CSV_DATE_KEYS = ("発生日", "日付", "date", "Date")
+_CSV_CARD_KEYS = ("カード決済", "card_payment", "カード", "Card")
+_CSV_QR_KEYS = ("QR決済", "qr_payment", "QR", "Qr")
+_CSV_POINTS_KEYS = ("利用ポイント", "ポイント", "used_points", "points", "Points")
+
+
+def _pick_csv_value(row: dict[str, Any], keys: tuple[str, ...]) -> str | None:
+    for key in keys:
+        if key in row and row[key] is not None and str(row[key]).strip() != "":
+            return str(row[key])
+    return None
+
+
+def _has_any_csv_header(fieldnames: set[str], keys: tuple[str, ...]) -> bool:
+    return any(k in fieldnames for k in keys)
+
+
+def _new_daily_payment_bucket() -> dict[str, Decimal]:
+    return {
+        "card": Decimal("0"),
+        "qr": Decimal("0"),
+        "points": Decimal("0"),
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 def root(request: Request) -> HTMLResponse:
     month = date.today().strftime("%Y-%m")
@@ -584,63 +609,131 @@ def export_csv(month: str | None = None, db: Session = Depends(get_db)):
 
 
 @app.post("/import-payments")
-async def import_payments(month: str = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db)):
-    if not file.filename.lower().endswith(".csv"):
+async def import_payments(month: str = Form(...), files: list[UploadFile] = File(...), db: Session = Depends(get_db)):
+    if not files:
         return RedirectResponse(url=f"/entries?month={month}&err=CSVファイルを選んでください。", status_code=303)
 
-    raw = await file.read()
-    text = _decode_csv_bytes(raw)
-    reader = csv.DictReader(io.StringIO(text))
-    if reader.fieldnames is None:
-        return RedirectResponse(url=f"/entries?month={month}&err=CSVのヘッダーが読み取れません。", status_code=303)
+    invalid_files = [f.filename or "(ファイル名なし)" for f in files if not (f.filename or "").lower().endswith(".csv")]
+    if invalid_files:
+        names = ", ".join(invalid_files)
+        return RedirectResponse(url=f"/entries?month={month}&err=CSV以外のファイルがあります: {names}", status_code=303)
 
-    # header variants
-    def pick(row: dict[str, str], *keys: str) -> str | None:
-        for k in keys:
-            if k in row and row[k] is not None and str(row[k]).strip() != "":
-                return str(row[k])
-        return None
+    daily_totals: dict[date, dict[str, Decimal]] = {}
+    provided_columns = {"card": False, "qr": False, "points": False}
+    row_errors = 0
+    file_errors = 0
 
-    fieldnames = set(reader.fieldnames)
-    has_card = any(k in fieldnames for k in ("カード決済", "card_payment", "カード", "Card"))
-    has_qr = any(k in fieldnames for k in ("QR決済", "qr_payment", "QR", "Qr"))
-    has_points = any(k in fieldnames for k in ("利用ポイント", "ポイント", "used_points", "points", "Points"))
+    for file in files:
+        raw = await file.read()
+        text = _decode_csv_bytes(raw)
+        reader = csv.DictReader(io.StringIO(text))
+        if reader.fieldnames is None:
+            file_errors += 1
+            continue
 
-    updated = 0
-    skipped = 0
-    errors = 0
-    for r in reader:
-        try:
-            d_raw = pick(r, "発生日", "日付", "date", "Date")
-            if not d_raw:
-                errors += 1
+        fieldnames = set(reader.fieldnames)
+        has_card = _has_any_csv_header(fieldnames, _CSV_CARD_KEYS)
+        has_qr = _has_any_csv_header(fieldnames, _CSV_QR_KEYS)
+        has_points = _has_any_csv_header(fieldnames, _CSV_POINTS_KEYS)
+        if not (has_card or has_qr or has_points):
+            file_errors += 1
+            continue
+
+        provided_columns["card"] = provided_columns["card"] or has_card
+        provided_columns["qr"] = provided_columns["qr"] or has_qr
+        provided_columns["points"] = provided_columns["points"] or has_points
+
+        for r in reader:
+            try:
+                d_raw = _pick_csv_value(r, _CSV_DATE_KEYS)
+                if not d_raw:
+                    raise ValueError("日付が空です。")
+                dt = _parse_date_like(d_raw)
+                bucket = daily_totals.setdefault(dt, _new_daily_payment_bucket())
+                if has_card:
+                    bucket["card"] += _parse_money_like(_pick_csv_value(r, _CSV_CARD_KEYS))
+                if has_qr:
+                    bucket["qr"] += _parse_money_like(_pick_csv_value(r, _CSV_QR_KEYS))
+                if has_points:
+                    bucket["points"] += _parse_money_like(_pick_csv_value(r, _CSV_POINTS_KEYS))
+            except ValueError:
+                row_errors += 1
                 continue
-            dt = _parse_date_like(d_raw)
-            card = _parse_money_like(pick(r, "カード決済", "card_payment", "カード", "Card")) if has_card else None
-            qr = _parse_money_like(pick(r, "QR決済", "qr_payment", "QR", "Qr")) if has_qr else None
-            points = _parse_money_like(pick(r, "利用ポイント", "ポイント", "used_points", "points", "Points")) if has_points else None
-        except ValueError:
-            errors += 1
-            continue
 
+    if not daily_totals:
+        total_errors = row_errors + file_errors
+        if total_errors > 0:
+            return RedirectResponse(url=f"/entries?month={month}&err=有効なCSVデータがありません。エラー{total_errors}件", status_code=303)
+        return RedirectResponse(url=f"/entries?month={month}&err=CSVに取り込み対象データがありません。", status_code=303)
+
+    auto_note = "CSV取込で自動作成（売上は決済合計）"
+    updated = 0
+    created = 0
+    skipped = 0
+    adjusted_sales = 0
+
+    for dt in sorted(daily_totals.keys()):
+        totals = daily_totals[dt]
         row = db.execute(select(SalesDaily).where(SalesDaily.happened_on == dt)).scalar_one_or_none()
-        if not row:
-            skipped += 1
+
+        if row is None:
+            payments_total = totals["card"] + totals["qr"] + totals["points"]
+            row = SalesDaily(
+                happened_on=dt,
+                sales=payments_total,
+                customers=0,
+                unit_price=None,
+                outsourcing_cost=Decimal("0"),
+                used_points=totals["points"],
+                card_payment=totals["card"],
+                qr_payment=totals["qr"],
+                note=auto_note,
+            )
+            row.store_sales = row.computed_store_sales
+            row.cash_payment = row.computed_cash_payment
+            db.add(row)
+            created += 1
             continue
 
-        if card is not None:
-            row.card_payment = card
-        if qr is not None:
-            row.qr_payment = qr
-        if points is not None:
-            row.used_points = points
-        # recompute derived fields
+        new_card = totals["card"] if provided_columns["card"] else _as_money(row.card_payment)
+        new_qr = totals["qr"] if provided_columns["qr"] else _as_money(row.qr_payment)
+        new_points = totals["points"] if provided_columns["points"] else _as_money(row.used_points)
+        payments_total = new_card + new_qr + new_points
+        current_sales = _as_money(row.sales)
+
+        if current_sales < payments_total:
+            # 自動作成に近い行のみ売上を補正し、それ以外は不整合としてスキップする。
+            can_adjust_sales = (
+                int(row.customers or 0) == 0
+                and _as_money(row.outsourcing_cost) == Decimal("0")
+                and ((row.note or "").strip() in ("", auto_note))
+            )
+            if can_adjust_sales:
+                row.sales = payments_total
+                row.unit_price = None
+                if not (row.note or "").strip():
+                    row.note = auto_note
+                adjusted_sales += 1
+            else:
+                skipped += 1
+                continue
+
+        row.card_payment = new_card
+        row.qr_payment = new_qr
+        row.used_points = new_points
         row.cash_payment = row.computed_cash_payment
         row.store_sales = row.computed_store_sales
         updated += 1
 
     db.commit()
-    if errors:
-        return RedirectResponse(url=f"/entries?month={month}&msg=取り込み: 更新{updated}件 / スキップ{skipped}件 / エラー{errors}件", status_code=303)
-    return RedirectResponse(url=f"/entries?month={month}&msg=取り込み: 更新{updated}件 / スキップ{skipped}件", status_code=303)
+    parts = [f"取り込み(日次集計): 更新{updated}件", f"新規{created}件"]
+    if adjusted_sales:
+        parts.append(f"売上補正{adjusted_sales}件")
+    if skipped:
+        parts.append(f"スキップ{skipped}件")
+    total_errors = row_errors + file_errors
+    if total_errors:
+        parts.append(f"エラー{total_errors}件")
+    msg = " / ".join(parts)
+    return RedirectResponse(url=f"/entries?month={month}&msg={msg}", status_code=303)
 

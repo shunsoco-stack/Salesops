@@ -82,19 +82,19 @@
   </section>
 
   <section class="card">
-    <h2>カード/QR/利用ポイントをCSVから取り込み</h2>
+    <h2>カード/QR/利用ポイントをCSVから日次集計で取り込み</h2>
     <form action="/import-payments" method="post" enctype="multipart/form-data" class="form">
       <input type="hidden" name="month" value="{{ month }}" />
       <div class="grid">
         <label class="grid__full">
-          CSVファイル（列に「発生日」「カード決済」「QR決済」「利用ポイント」）
-          <input type="file" name="file" accept=".csv,text/csv" required />
+          CSVファイル（複数選択可 / 列に「発生日」「カード決済」「QR決済」「利用ポイント」のいずれか）
+          <input type="file" name="files" accept=".csv,text/csv" multiple required />
         </label>
       </div>
       <div class="form__actions">
         <button type="submit">取り込み</button>
       </div>
-      <p class="hint">既に存在する日付のデータに対して、カード決済/QR決済/利用ポイントを上書きします（存在しない日付はスキップ）。</p>
+      <p class="hint">複数CSVを日付ごとに合算して登録します。既存日付は上書き、未登録日付は新規作成（売上は決済合計で初期化）します。</p>
     </form>
   </section>
 
